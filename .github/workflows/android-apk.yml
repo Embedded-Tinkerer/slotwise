@@ -35,8 +35,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-
+      # ubuntu-latest ships the Android SDK; Gradle fetches any missing platform.
       - uses: gradle/actions/setup-gradle@v4
 
       - run: npm ci
