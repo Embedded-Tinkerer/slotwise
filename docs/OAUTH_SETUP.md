@@ -1,7 +1,7 @@
 # Connecting Google Calendar and Outlook
 
-Slotwise reads your calendars so it can schedule tasks around your meetings. It
-only asks for **read-only** calendar access, signs in with OAuth + PKCE (no
+Slotwise reads your calendars so it can schedule tasks around your meetings,
+and imports your Google Tasks. It only asks for **read-only** calendar access, signs in with OAuth + PKCE (no
 client secret is stored in the app), and keeps tokens in Android's encrypted
 secure storage on your phone. No server is involved: the phone talks to Google
 and Microsoft directly.
@@ -15,17 +15,20 @@ IDs as GitHub secrets so the APK build includes them. About 15 minutes total.
 
 1. Go to <https://console.cloud.google.com/> and create a new project (top bar,
    project picker, **New project**). Name it `Slotwise`.
-2. Enable the Calendar API: **APIs & Services → Library**, search for
-   **Google Calendar API**, click **Enable**.
+2. Enable two APIs: **APIs & Services → Library**, search for
+   **Google Calendar API** and click **Enable**, then do the same for
+   **Google Tasks API**.
 3. Set up the consent screen: **APIs & Services → OAuth consent screen**
    (shown as **Google Auth Platform**).
    - **Branding**: app name `Slotwise`, your email as support and developer
      contact.
    - **Audience**: choose **External**. Under **Test users**, add your own
      Gmail address.
-   - **Data access**: add the scope
-     `https://www.googleapis.com/auth/calendar.readonly` (optional, the app
-     asks for it anyway).
+   - **Data access**: add the scopes
+     `https://www.googleapis.com/auth/calendar.readonly` and
+     `https://www.googleapis.com/auth/tasks` (optional, the app asks for them
+     anyway). The Tasks scope is read/write so that finishing an imported task
+     in Slotwise ticks it off in Google Tasks.
 4. Create the client: **Clients → Create client**.
    - **Application type: iOS** (yes, iOS, even though you are on Android; see
      the note below).
@@ -99,6 +102,19 @@ without a commit.
    it, then install. Later builds install over the top and keep your data.
 4. Open Slotwise, go to **Calendars**, and tap **Connect Google Calendar** and
    **Connect Outlook**.
+
+## 5. Gemini, for "Add with AI" (optional)
+
+No build setup needed. On your phone, open **Calendars → AI assistant
+(Gemini)**, tap **Open Google AI Studio**, create an API key, and paste it in.
+The key is stored only in the phone's secure storage. Then use **✦ Add with
+AI** on the Tasks tab: type or dictate something like *"Finish the PA test plan
+by Thursday, about 3 hours, high priority. Gym Wednesday at 6pm."* and review
+the tasks and fixed blocks Gemini suggests before adding them.
+
+The default model is `gemini-flash-latest`; you can change it in the same
+section. The free tier is plenty for personal use. Note that on the free tier
+Google may use prompts to improve its products.
 
 ## Local development (optional)
 

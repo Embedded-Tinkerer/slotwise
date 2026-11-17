@@ -15,6 +15,8 @@ import {
   googleAccount,
   microsoftAccount,
 } from './sync/calendars';
+import { fetchGoogleTasks, setGoogleTaskDone } from './sync/googleTasks';
+import { mergeGoogleTasks } from './sync/googleTasksMerge';
 import {
   DEFAULT_SETTINGS,
   type CalendarEvent,
@@ -36,6 +38,8 @@ interface Persisted {
   synced: Record<ProviderId, CalendarEvent[]>;
   settings: Settings;
   connections: Partial<Record<ProviderId, Connection>>;
+  /** Google Tasks ids the user deleted here, so they are not re-imported. */
+  ignoredGoogleTasks: string[];
 }
 
 const STORAGE_KEY = 'slotwise_state_v1';
@@ -47,6 +51,7 @@ const EMPTY: Persisted = {
   synced: { google: [], microsoft: [] },
   settings: DEFAULT_SETTINGS,
   connections: {},
+  ignoredGoogleTasks: [],
 };
 
 interface Store extends Persisted {
@@ -93,6 +98,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             ...saved,
             settings: { ...DEFAULT_SETTINGS, ...saved.settings },
             synced: { ...EMPTY.synced, ...saved.synced },
+            ignoredGoogleTasks: saved.ignoredGoogleTasks ?? [],
           });
         }
       } finally {
@@ -129,6 +135,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const to = new Date(Date.now() + (stateRef.current.settings.horizonDays + 1) * 24 * 3600_000);
         const events = p === 'google' ? await fetchGoogleEvents(from, to) : await fetchMicrosoftEvents(from, to);
         setState((s) => ({ ...s, synced: { ...s.synced, [p]: events } }));
+        if (p === 'google' && stateRef.current.settings.googleTasks) {
+          const remote = await fetchGoogleTasks();
+          // Push completions made here that Google has not seen yet.
+          const openRemote = new Set(remote.map((r) => r.id));
+          const pending = stateRef.current.tasks.filter(
+            (t) => t.completed && t.external && openRemote.has(t.external.taskId),
+          );
+          for (const t of pending) await setGoogleTaskDone(t.external!.listId, t.external!.taskId, true);
+          const stillOpen = remote.filter((r) => !pending.some((t) => t.external!.taskId === r.id));
+          setState((s) => ({
+            ...s,
+            tasks: mergeGoogleTasks(
+              s.tasks,
+              stillOpen,
+              s.ignoredGoogleTasks,
+              () => Crypto.randomUUID(),
+              new Date().toISOString(),
+            ),
+          }));
+        }
         patchConnection(p, { syncing: false, lastSync: new Date().toISOString() });
       } catch (e) {
         patchConnection(p, { syncing: false, error: (e as Error).message });
@@ -205,26 +231,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const deleteTask = useCallback((id: string) => {
-    setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
+    setState((s) => {
+      const ext = s.tasks.find((t) => t.id === id)?.external;
+      return {
+        ...s,
+        tasks: s.tasks.filter((t) => t.id !== id),
+        ignoredGoogleTasks: ext ? [...s.ignoredGoogleTasks, ext.taskId] : s.ignoredGoogleTasks,
+      };
+    });
   }, []);
 
-  const completeTask = useCallback((id: string, done = true) => {
-    setState((s) => ({
-      ...s,
-      tasks: s.tasks.map((t) => (t.id === id ? { ...t, completed: done } : t)),
-    }));
-  }, []);
+  /** Mirror a completion change to Google Tasks; retried on the next sync if it fails. */
+  const pushCompletion = useCallback(
+    (id: string, done: boolean) => {
+      const ext = stateRef.current.tasks.find((t) => t.id === id)?.external;
+      if (!ext) return;
+      setGoogleTaskDone(ext.listId, ext.taskId, done).catch((e) =>
+        patchConnection('google', { error: `Could not update Google Tasks: ${(e as Error).message}` }),
+      );
+    },
+    [patchConnection],
+  );
 
-  const logProgress = useCallback((id: string, minutes: number) => {
-    setState((s) => ({
-      ...s,
-      tasks: s.tasks.map((t) => {
-        if (t.id !== id) return t;
-        const doneMin = Math.min(t.durationMin, t.doneMin + minutes);
-        return { ...t, doneMin, completed: doneMin >= t.durationMin };
-      }),
-    }));
-  }, []);
+  const completeTask = useCallback(
+    (id: string, done = true) => {
+      setState((s) => ({
+        ...s,
+        tasks: s.tasks.map((t) => (t.id === id ? { ...t, completed: done } : t)),
+      }));
+      pushCompletion(id, done);
+    },
+    [pushCompletion],
+  );
+
+  const logProgress = useCallback(
+    (id: string, minutes: number) => {
+      const t = stateRef.current.tasks.find((x) => x.id === id);
+      if (!t) return;
+      const doneMin = Math.min(t.durationMin, t.doneMin + minutes);
+      const completed = doneMin >= t.durationMin;
+      setState((s) => ({
+        ...s,
+        tasks: s.tasks.map((x) => (x.id === id ? { ...x, doneMin, completed } : x)),
+      }));
+      if (completed) pushCompletion(id, true);
+    },
+    [pushCompletion],
+  );
 
   const saveEvent: Store['saveEvent'] = useCallback((e) => {
     setState((s) => {

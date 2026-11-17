@@ -18,6 +18,10 @@ meetings, and re-plans automatically when something slips.
   planning window.
 - **Calendar sync** (read-only) with Google Calendar and Outlook / Microsoft
   365. Free, declined and cancelled events don't block time.
+- **Google Tasks**: open tasks are imported, shown on their due day and
+  scheduled before it. Finishing one here ticks it off in Google.
+- **Add with AI**: type or dictate a note and Gemini turns it into tasks and
+  fixed blocks for you to review before adding.
 - **Personal blocks** for fixed time that isn't on a synced calendar.
 - Light and dark mode.
 
@@ -44,5 +48,7 @@ npx expo run:android
 | `src/store.tsx` | App state, persistence, auto-sync |
 | `src/sync/auth.ts` | OAuth + PKCE sign-in and token refresh |
 | `src/sync/calendars.ts` | Google Calendar and Microsoft Graph event fetching |
+| `src/sync/googleTasks*.ts` | Google Tasks import and completion sync |
+| `src/ai/` | Gemini prompt, schema and response validation |
 | `src/screens/` | Plan, Tasks, task editor, Calendars & hours |
 | `.github/workflows/android-apk.yml` | APK build and release |

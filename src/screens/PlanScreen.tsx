@@ -36,6 +36,7 @@ export default function PlanScreen() {
   }, [allEvents, plan.blocks, taskById, day]);
 
   const allDay = allEvents.filter((e) => e.allDay && sameLocalDay(e.start, day));
+  const dueToday = tasks.filter((x) => x.deadline && sameLocalDay(x.deadline, day));
   const warnings = [
     ...plan.atRisk.map((id) => taskById.get(id)?.title).filter(Boolean),
   ] as string[];
@@ -123,6 +124,41 @@ export default function PlanScreen() {
           </View>
         ))}
 
+        {dueToday.length > 0 && (
+          <View style={[styles.dueBox, { backgroundColor: t.surface, borderColor: t.border }]}>
+            <Text style={[styles.dueHead, { color: t.textMuted }]}>Due this day</Text>
+            {dueToday.map((task) => (
+              <Pressable
+                key={task.id}
+                onPress={() => completeTask(task.id, !task.completed)}
+                style={styles.dueRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: task.completed }}
+              >
+                <View
+                  style={[
+                    styles.dueCheck,
+                    { borderColor: PRIORITY_COLORS[task.priority] },
+                    task.completed && { backgroundColor: PRIORITY_COLORS[task.priority] },
+                  ]}
+                >
+                  {task.completed && <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>✓</Text>}
+                </View>
+                <Text
+                  style={[
+                    { flex: 1, color: t.text, fontWeight: '600' },
+                    task.completed && { textDecorationLine: 'line-through', color: t.textMuted },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {task.title}
+                </Text>
+                {task.external && <Text style={[styles.badge, { color: SOURCE_COLORS.google }]}>Google Tasks</Text>}
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         {items.length === 0 && (
           <Card>
             <Text style={{ color: t.textMuted }}>
@@ -185,6 +221,7 @@ export default function PlanScreen() {
                   {PRIORITY_LABELS[item.task.priority]}
                   {item.task.deadline ? ` · due ${fmtDay(item.task.deadline)} ${fmtTime(item.task.deadline)}` : ''}
                   {risk ? ' · at risk' : ''}
+                  {item.task.external ? ' · Google Tasks' : ''}
                 </Text>
               </View>
             </Pressable>
@@ -217,6 +254,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   bar: { width: 4, borderRadius: 2 },
+  dueBox: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 },
+  dueHead: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
+  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  dueCheck: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  badge: { fontSize: 11, fontWeight: '700' },
   time: { fontSize: 12, fontWeight: '600' },
   title: { fontSize: 16, fontWeight: '700', marginVertical: 2 },
 });

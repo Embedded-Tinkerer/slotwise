@@ -5,14 +5,16 @@ import { Button, Card, Chip, SectionTitle } from '../components/ui';
 import { fmtDateTime, fmtDuration } from '../format';
 import { compareTasks, remainingMinutes } from '../scheduler';
 import { useStore } from '../store';
-import { PRIORITY_COLORS, useTheme } from '../theme';
+import { PRIORITY_COLORS, SOURCE_COLORS, useTheme } from '../theme';
 import { PRIORITY_LABELS, type Task } from '../types';
+import AIComposer from './AIComposer';
 import TaskEditor from './TaskEditor';
 
 export default function TasksScreen() {
   const t = useTheme();
   const { tasks, plan, completeTask } = useStore();
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
+  const [composing, setComposing] = useState(false);
   const [showDone, setShowDone] = useState(false);
 
   const firstBlock = useMemo(() => {
@@ -60,6 +62,11 @@ export default function TasksScreen() {
               {task.doneMin > 0 && !task.completed ? ` left of ${fmtDuration(task.durationMin)}` : ''}
               {task.deadline ? ` · due ${fmtDateTime(task.deadline)}` : ''}
             </Text>
+            {task.external && (
+              <Text style={{ color: SOURCE_COLORS.google, fontSize: 12, fontWeight: '700', marginTop: 2 }}>
+                Google Tasks{task.external.listTitle ? ` · ${task.external.listTitle}` : ''}
+              </Text>
+            )}
             {!task.completed && (
               <Text style={{ color: risk || unscheduled ? t.warn : t.accent, fontSize: 13, marginTop: 2 }}>
                 {unscheduled
@@ -100,8 +107,10 @@ export default function TasksScreen() {
         )}
       </ScrollView>
       <View style={[styles.fabWrap, { backgroundColor: t.bg, borderColor: t.border }]}>
-        <Button label="+ Add task" onPress={() => setEditing('new')} />
+        <Button kind="secondary" label="✦ Add with AI" onPress={() => setComposing(true)} style={{ flex: 1 }} />
+        <Button label="+ Add task" onPress={() => setEditing('new')} style={{ flex: 1 }} />
       </View>
+      {composing && <AIComposer visible onClose={() => setComposing(false)} />}
       {editing && (
         <TaskEditor
           visible
@@ -126,5 +135,5 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   title: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
-  fabWrap: { padding: 16, borderTopWidth: 1 },
+  fabWrap: { padding: 16, borderTopWidth: 1, flexDirection: 'row', gap: 12 },
 });

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
+import { DEFAULT_GEMINI_MODEL, getGeminiKey, setGeminiKey } from '../ai/gemini';
 import { DateTimeField } from '../components/DateTimeField';
+import { GeminiKeyForm } from './AIComposer';
 import { Button, Card, Chip, Label, SectionTitle } from '../components/ui';
 import { fmtDateTime, fmtDuration, fmtMinutesOfDay, fmtTime } from '../format';
 import { useStore } from '../store';
@@ -12,7 +14,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function ConnectionCard({ id, name, hint }: { id: ProviderId; name: string; hint: string }) {
   const t = useTheme();
-  const { connections, connect, disconnect, syncAll, synced } = useStore();
+  const { connections, connect, disconnect, syncAll, synced, settings, updateSettings } = useStore();
   const c = connections[id];
   const configured = isConfigured(id);
   return (
@@ -28,6 +30,17 @@ function ConnectionCard({ id, name, hint }: { id: ProviderId; name: string; hint
           </Text>
         </View>
       </View>
+      {id === 'google' && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontWeight: '600' }}>Include Google Tasks</Text>
+            <Text style={{ color: t.textMuted, fontSize: 13 }}>
+              Open tasks are imported (30 min by default) and scheduled before their due date.
+            </Text>
+          </View>
+          <Switch value={settings.googleTasks} onValueChange={(v) => updateSettings({ googleTasks: v })} />
+        </View>
+      )}
       {c?.error && <Text style={{ color: t.danger, marginTop: 8, fontSize: 13 }}>{c.error}</Text>}
       {!configured && (
         <Text style={{ color: t.warn, marginTop: 8, fontSize: 13 }}>
@@ -124,6 +137,51 @@ function PersonalBlocks() {
   );
 }
 
+function GeminiSection() {
+  const t = useTheme();
+  const { settings, updateSettings } = useStore();
+  const [hasKey, setHasKey] = useState<boolean | null>(null);
+  useEffect(() => {
+    getGeminiKey().then((k) => setHasKey(!!k));
+  }, []);
+  return (
+    <>
+      <SectionTitle>AI assistant (Gemini)</SectionTitle>
+      <Card>
+        {hasKey ? (
+          <>
+            <Text style={{ color: t.text, fontWeight: '700' }}>Gemini key saved on this phone</Text>
+            <Text style={{ color: t.textMuted, fontSize: 13, marginBottom: 6 }}>
+              Use “Add with AI” on the Tasks tab to turn a sentence into tasks and fixed blocks.
+            </Text>
+            <Label>Model</Label>
+            <TextInput
+              value={settings.geminiModel}
+              onChangeText={(v) => updateSettings({ geminiModel: v.trim() })}
+              placeholder={DEFAULT_GEMINI_MODEL}
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[styles.input, { color: t.text, borderColor: t.border }]}
+            />
+            <Button
+              kind="danger"
+              label="Remove key"
+              onPress={async () => {
+                await setGeminiKey(null);
+                setHasKey(false);
+              }}
+              style={{ marginTop: 12 }}
+            />
+          </>
+        ) : hasKey === false ? (
+          <GeminiKeyForm onSaved={() => setHasKey(true)} />
+        ) : null}
+      </Card>
+    </>
+  );
+}
+
 export default function SettingsScreen() {
   const t = useTheme();
   const { settings, updateSettings } = useStore();
@@ -182,6 +240,8 @@ export default function SettingsScreen() {
           />
         ))}
       </View>
+
+      <GeminiSection />
 
       <PersonalBlocks />
     </ScrollView>

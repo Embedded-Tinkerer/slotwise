@@ -29,6 +29,8 @@ export interface Task {
   minChunkMin: number;
   completed: boolean;
   createdAt: string;
+  /** Set when the task was imported from Google Tasks. */
+  external?: { source: 'googleTasks'; listId: string; taskId: string; listTitle?: string };
 }
 
 export type EventSource = 'local' | 'google' | 'microsoft';
@@ -68,6 +70,10 @@ export interface Settings {
   bufferMin: number;
   /** Snap block starts to this many minutes. */
   slotMin: number;
+  /** Import Google Tasks as schedulable tasks when Google is connected. */
+  googleTasks: boolean;
+  /** Gemini model used by "Add with AI". */
+  geminiModel: string;
 }
 
 export interface ScheduleResult {
@@ -93,4 +99,6 @@ export const DEFAULT_SETTINGS: Settings = {
   horizonDays: 14,
   bufferMin: 0,
   slotMin: 15,
+  googleTasks: true,
+  geminiModel: 'gemini-flash-latest',
 };

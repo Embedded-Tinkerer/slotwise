@@ -42,6 +42,8 @@ export function providerConfig(id: ProviderId): ProviderConfig {
         'openid',
         'email',
         'https://www.googleapis.com/auth/calendar.readonly',
+        // Read/write so finishing a task in Slotwise ticks it off in Google Tasks.
+        'https://www.googleapis.com/auth/tasks',
       ],
       discovery: {
         authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',

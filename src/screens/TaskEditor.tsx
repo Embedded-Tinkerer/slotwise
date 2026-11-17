@@ -54,6 +54,13 @@ export default function TaskEditor({
           <Text style={[styles.headerText, { color: t.text }]}>{task ? 'Edit task' : 'New task'}</Text>
         </View>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          {task?.external && (
+            <Text style={{ color: t.textMuted, fontSize: 13 }}>
+              Synced from Google Tasks{task.external.listTitle ? ` (${task.external.listTitle})` : ''}. Title, notes and
+              due date update from Google on each sync; set how long it takes and its priority here. Finishing it
+              here ticks it off in Google Tasks.
+            </Text>
+          )}
           <Label>What needs doing?</Label>
           <TextInput
             value={title}
