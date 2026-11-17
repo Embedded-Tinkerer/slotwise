@@ -21,13 +21,12 @@ npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run `npm test` and `npm run typecheck` before declaring any task done.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+- The app has three tabs (Plan, Tasks, Calendars) switched by simple state in `App.tsx`; it does not use Expo Router. Screens live in `src/screens/`.
+- Scheduling logic is pure TypeScript in `src/scheduler.ts`, covered by `npm test`. Keep it free of React Native imports so the tests run in plain Node.
 
 ## Building with EAS
 

@@ -1,0 +1,70 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      EXPO_PUBLIC_MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+      EXPO_PUBLIC_MS_TENANT: ${{ secrets.MS_TENANT }}
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: android
+        # arm64 only: covers every modern Android phone and halves build time.
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk slotwise-${{ github.run_number }}.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slotwise-apk
+          path: slotwise-*.apk
+
+      - name: Publish release (main only)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" slotwise-${{ github.run_number }}.apk \
+            --title "Slotwise build ${{ github.run_number }}" \
+            --notes "Android APK built from ${{ github.sha }}. Open this page on your phone and tap the .apk to install." \
+            --latest
