@@ -4,6 +4,13 @@
 import * as SecureStore from 'expo-secure-store';
 
 import { RESPONSE_SCHEMA, buildPrompt, toDrafts, type Draft } from './parse';
+import {
+  PROJECT_SCHEMA,
+  buildProjectPrompt,
+  toProjectPlan,
+  type ProjectPlan,
+  type ProjectPlanInput,
+} from './projectPlan';
 
 const KEY = 'slotwise_gemini_key';
 export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
@@ -18,19 +25,20 @@ export async function setGeminiKey(key: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync(KEY);
 }
 
-export async function draftFromText(text: string, model: string = DEFAULT_GEMINI_MODEL): Promise<Draft[]> {
+/** Calls Gemini with a JSON response schema and returns the parsed JSON. */
+export async function generateJson(prompt: string, schema: object, model: string = DEFAULT_GEMINI_MODEL): Promise<unknown> {
   const key = await getGeminiKey();
-  if (!key) throw new Error('Add your Gemini API key first.');
+  if (!key) throw new Error('Add your Gemini API key first (Settings → AI assistant).');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || DEFAULT_GEMINI_MODEL)}:generateContent`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: buildPrompt(text, new Date()) }] }],
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.2,
+        temperature: 0.3,
         responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA,
+        responseSchema: schema,
       },
     }),
   });
@@ -49,5 +57,13 @@ export async function draftFromText(text: string, model: string = DEFAULT_GEMINI
   };
   const out = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
   if (!out) throw new Error('Gemini returned an empty answer. Try rephrasing.');
-  return toDrafts(JSON.parse(out));
+  return JSON.parse(out);
+}
+
+export async function draftFromText(text: string, model?: string): Promise<Draft[]> {
+  return toDrafts(await generateJson(buildPrompt(text, new Date()), RESPONSE_SCHEMA, model));
+}
+
+export async function draftProject(input: ProjectPlanInput, model?: string): Promise<ProjectPlan> {
+  return toProjectPlan(await generateJson(buildProjectPrompt(input, new Date()), PROJECT_SCHEMA, model));
 }

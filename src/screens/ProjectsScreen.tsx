@@ -17,6 +17,7 @@ import {
   type ScheduleId,
   type Task,
 } from '../types';
+import AIProjectPlanner from './AIProjectPlanner';
 import TaskEditor from './TaskEditor';
 import { TaskRow } from './TasksScreen';
 
@@ -142,11 +143,77 @@ function ProjectEditor({ project, onClose }: { project?: Project; onClose: (save
   );
 }
 
+/** Simple timeline: one bar per open step from its first block to its finish. */
+function ProjectTimeline({ project, steps }: { project: Project; steps: Task[] }) {
+  const t = useTheme();
+  const { plan, now } = useStore();
+  const rows = steps
+    .map((s) => {
+      const blocks = plan.blocks.filter((b) => b.taskId === s.id);
+      if (!blocks.length) return null;
+      return {
+        task: s,
+        start: Date.parse(blocks[0].start),
+        end: Date.parse(blocks[blocks.length - 1].end),
+        blocks: blocks.map((b) => [Date.parse(b.start), Date.parse(b.end)] as const),
+      };
+    })
+    .filter(Boolean) as { task: Task; start: number; end: number; blocks: (readonly [number, number])[] }[];
+  if (!rows.length) return null;
+  const deadline = project.deadline ? Date.parse(project.deadline) : undefined;
+  const from = Math.min(now, ...rows.map((r) => r.start));
+  const to = Math.max(...rows.map((r) => r.end), deadline ?? 0) + 3600_000;
+  const pct = (x: number) => `${((x - from) / (to - from)) * 100}%` as const;
+  const days: number[] = [];
+  const d0 = new Date(from);
+  d0.setHours(0, 0, 0, 0);
+  for (let d = new Date(d0); d.getTime() <= to; d.setDate(d.getDate() + 1)) if (d.getTime() >= from) days.push(d.getTime());
+
+  return (
+    <>
+      <SectionTitle>Timeline</SectionTitle>
+      <Card style={{ paddingVertical: 10 }}>
+        <View style={{ height: 16, marginLeft: 92 }}>
+          {days.slice(0, 14).map((d) => (
+            <Text key={d} style={{ position: 'absolute', left: pct(d), color: t.textMuted, fontSize: 10 }}>
+              {new Date(d).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}
+            </Text>
+          ))}
+        </View>
+        {rows.map((r) => (
+          <View key={r.task.id} style={{ flexDirection: 'row', alignItems: 'center', height: 24 }}>
+            <Text numberOfLines={1} style={{ width: 88, color: t.text, fontSize: 12, marginRight: 4 }}>
+              {r.task.title}
+            </Text>
+            <View style={{ flex: 1, height: 12 }}>
+              <View style={[styles.span, { left: pct(r.start), width: pct(from + (r.end - r.start)), backgroundColor: project.color + '33' }]} />
+              {r.blocks.map(([a, b]) => (
+                <View
+                  key={a}
+                  style={[
+                    styles.span,
+                    { left: pct(a), width: pct(from + Math.max(b - a, (to - from) / 150)), backgroundColor: project.color },
+                  ]}
+                />
+              ))}
+              {deadline && <View style={[styles.deadline, { left: pct(deadline), backgroundColor: t.danger }]} />}
+            </View>
+          </View>
+        ))}
+        {deadline && (
+          <Text style={{ color: t.textMuted, fontSize: 11, marginTop: 4, marginLeft: 92 }}>Red line: deadline</Text>
+        )}
+      </Card>
+    </>
+  );
+}
+
 function ProjectDetail({ project, onBack }: { project: Project; onBack: () => void }) {
   const t = useTheme();
   const { tasks, plan, moveStep } = useStore();
   const [editing, setEditing] = useState<Task | 'new' | null>(null);
   const [editProject, setEditProject] = useState(false);
+  const [aiSteps, setAiSteps] = useState(false);
 
   const steps = tasks.filter((x) => x.projectId === project.id).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const open = steps.filter((x) => !x.completed);
@@ -187,6 +254,8 @@ function ProjectDetail({ project, onBack }: { project: Project; onBack: () => vo
           </Text>
         )}
 
+        <ProjectTimeline project={project} steps={open} />
+
         <SectionTitle>Steps</SectionTitle>
         {open.length === 0 && (
           <Text style={{ color: t.textMuted, marginBottom: 8 }}>No open steps. Add the first one below.</Text>
@@ -217,8 +286,10 @@ function ProjectDetail({ project, onBack }: { project: Project; onBack: () => vo
         )}
       </ScrollView>
       <View style={[styles.fabWrap, { borderColor: t.border }]}>
+        <Button kind="secondary" label="✦ Add with AI" onPress={() => setAiSteps(true)} style={{ flex: 1 }} />
         <Button label="+ Add step" onPress={() => setEditing('new')} style={{ flex: 1 }} />
       </View>
+      {aiSteps && <AIProjectPlanner project={project} onClose={() => setAiSteps(false)} />}
       {editing && (
         <TaskEditor
           visible
@@ -245,6 +316,7 @@ export default function ProjectsScreen() {
   const { projects, tasks, plan } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
   const current = projects.find((p) => p.id === openId);
@@ -260,7 +332,8 @@ export default function ProjectsScreen() {
             <Text style={{ color: t.text, fontWeight: '700', marginBottom: 4 }}>No projects yet</Text>
             <Text style={{ color: t.textMuted }}>
               A project groups steps under one deadline. Turn on "Do steps in order" and each step is only scheduled
-              after the one before it, so you can see when the whole thing will be done.
+              after the one before it, so you can see when the whole thing will be done. Tap "Plan with AI" to
+              describe a project and let Gemini draft the steps.
             </Text>
           </Card>
         )}
@@ -294,8 +367,17 @@ export default function ProjectsScreen() {
         )}
       </ScrollView>
       <View style={[styles.fabWrap, { borderColor: t.border }]}>
+        <Button kind="secondary" label="✦ Plan with AI" onPress={() => setPlanning(true)} style={{ flex: 1 }} />
         <Button label="+ New project" onPress={() => setCreating(true)} style={{ flex: 1 }} />
       </View>
+      {planning && (
+        <AIProjectPlanner
+          onClose={(id) => {
+            setPlanning(false);
+            if (id) setOpenId(id);
+          }}
+        />
+      )}
       {creating && (
         <ProjectEditor
           onClose={(id) => {
@@ -322,5 +404,7 @@ const styles = StyleSheet.create({
   progress: { height: 6, borderRadius: 3, marginTop: 10, overflow: 'hidden' },
   detailHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8 },
   reorder: { alignItems: 'center', paddingTop: 10, width: 22 },
-  fabWrap: { padding: 16, borderTopWidth: 1, flexDirection: 'row' },
+  fabWrap: { padding: 16, borderTopWidth: 1, flexDirection: 'row', gap: 12 },
+  span: { position: 'absolute', top: 0, height: 12, borderRadius: 3 },
+  deadline: { position: 'absolute', top: -4, width: 2, height: 20 },
 });
