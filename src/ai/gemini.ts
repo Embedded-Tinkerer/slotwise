@@ -3,6 +3,7 @@
 
 import * as SecureStore from 'expo-secure-store';
 
+import type { Attachment } from './attachments';
 import { RESPONSE_SCHEMA, buildPrompt, toDrafts, type Draft } from './parse';
 import {
   PROJECT_SCHEMA,
@@ -26,7 +27,12 @@ export async function setGeminiKey(key: string | null): Promise<void> {
 }
 
 /** Calls Gemini with a JSON response schema and returns the parsed JSON. */
-export async function generateJson(prompt: string, schema: object, model: string = DEFAULT_GEMINI_MODEL): Promise<unknown> {
+export async function generateJson(
+  prompt: string,
+  schema: object,
+  model: string = DEFAULT_GEMINI_MODEL,
+  attachments: Attachment[] = [],
+): Promise<unknown> {
   const key = await getGeminiKey();
   if (!key) throw new Error('Add your Gemini API key first (Settings → AI assistant).');
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || DEFAULT_GEMINI_MODEL)}:generateContent`;
@@ -34,7 +40,15 @@ export async function generateJson(prompt: string, schema: object, model: string
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            ...attachments.map((a) => ({ inlineData: { mimeType: a.mimeType, data: a.data } })),
+            { text: prompt },
+          ],
+        },
+      ],
       generationConfig: {
         temperature: 0.3,
         responseMimeType: 'application/json',
@@ -60,10 +74,18 @@ export async function generateJson(prompt: string, schema: object, model: string
   return JSON.parse(out);
 }
 
-export async function draftFromText(text: string, model?: string): Promise<Draft[]> {
-  return toDrafts(await generateJson(buildPrompt(text, new Date()), RESPONSE_SCHEMA, model));
+export async function draftFromText(text: string, model?: string, attachments: Attachment[] = []): Promise<Draft[]> {
+  const note = attachments.length
+    ? `${text}\n\n(Attached: ${attachments.map((a) => a.name).join(', ')}. Use them to find tasks, dates and appointments.)`
+    : text;
+  return toDrafts(await generateJson(buildPrompt(note, new Date()), RESPONSE_SCHEMA, model, attachments));
 }
 
-export async function draftProject(input: ProjectPlanInput, model?: string): Promise<ProjectPlan> {
-  return toProjectPlan(await generateJson(buildProjectPrompt(input, new Date()), PROJECT_SCHEMA, model));
+export async function draftProject(
+  input: ProjectPlanInput,
+  model?: string,
+  attachments: Attachment[] = [],
+): Promise<ProjectPlan> {
+  const prompt = buildProjectPrompt({ ...input, attachmentNames: attachments.map((a) => a.name) }, new Date());
+  return toProjectPlan(await generateJson(prompt, PROJECT_SCHEMA, model, attachments));
 }

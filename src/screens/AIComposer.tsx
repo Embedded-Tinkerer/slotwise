@@ -13,7 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GEMINI_KEY_URL, draftFromText, getGeminiKey, setGeminiKey } from '../ai/gemini';
+import type { Attachment } from '../ai/attachments';
 import type { Draft } from '../ai/parse';
+import { AttachmentBar } from '../components/AttachmentBar';
 import { Button, Card, Label } from '../components/ui';
 import { fmtDateTime, fmtDuration, fmtTime } from '../format';
 import { useStore } from '../store';
@@ -67,6 +69,7 @@ export default function AIComposer({ visible, onClose }: { visible: boolean; onC
   const [error, setError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [skip, setSkip] = useState<Set<number>>(new Set());
+  const [files, setFiles] = useState<Attachment[]>([]);
 
   useEffect(() => {
     if (visible) getGeminiKey().then((k) => setHasKey(!!k));
@@ -76,7 +79,7 @@ export default function AIComposer({ visible, onClose }: { visible: boolean; onC
     setBusy(true);
     setError(null);
     try {
-      const d = await draftFromText(text, settings.geminiModel);
+      const d = await draftFromText(text.trim() || 'Find the tasks and appointments in the attached files.', settings.geminiModel, files);
       setDrafts(d);
       setSkip(new Set());
       if (d.length === 0) setError('Gemini did not find any tasks or appointments in that. Try adding more detail.');
@@ -141,10 +144,11 @@ export default function AIComposer({ visible, onClose }: { visible: boolean; onC
               <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 6 }}>
                 Tip: tap the microphone on your keyboard to dictate.
               </Text>
+              {!drafts && <AttachmentBar value={files} onChange={setFiles} />}
               {!drafts && (
                 <Button
                   label={busy ? 'Thinking…' : 'Turn into tasks'}
-                  disabled={busy || !text.trim()}
+                  disabled={busy || (!text.trim() && !files.length)}
                   onPress={run}
                   style={{ marginTop: 12 }}
                 />

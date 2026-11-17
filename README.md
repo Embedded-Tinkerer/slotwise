@@ -19,7 +19,8 @@ meetings, and re-plans automatically when something slips.
 - **Plan a project with AI**: describe a project and its deadline, Gemini
   drafts ordered steps with time estimates, you edit them, and Slotwise
   schedules them and shows the project timeline. Works on existing projects
-  too ("Add with AI" adds the missing steps).
+  too ("Add with AI" adds the missing steps). Attach PDFs, photos or text
+  files and Gemini plans from them.
 - **Recurring tasks and habits**: every day, weekdays, certain days, or
   "3 times a week" spread across the week, at a preferred time of day.
 - **Work and personal hours**: each task, project or habit goes in one or the

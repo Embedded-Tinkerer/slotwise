@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { draftProject, getGeminiKey } from '../ai/gemini';
 import type { PlannedStep, ProjectPlan } from '../ai/projectPlan';
+import type { Attachment } from '../ai/attachments';
+import { AttachmentBar } from '../components/AttachmentBar';
 import { DateTimeField } from '../components/DateTimeField';
 import { Button, Card, Chip, Label } from '../components/ui';
 import { fmtDuration } from '../format';
@@ -36,6 +38,7 @@ export default function AIProjectPlanner({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<ProjectPlan | null>(null);
+  const [files, setFiles] = useState<Attachment[]>([]);
 
   useEffect(() => {
     getGeminiKey().then((k) => setHasKey(!!k));
@@ -51,12 +54,15 @@ export default function AIProjectPlanner({
     try {
       const p = await draftProject(
         {
-          description: description.trim() || (project ? 'Add whatever steps are missing.' : ''),
+          description:
+            description.trim() ||
+            (files.length ? 'Plan the project described in the attached files.' : 'Add whatever steps are missing.'),
           deadline,
           projectName: project?.name,
           existingSteps: existing.map((x) => ({ title: x.title, durationMin: x.durationMin, completed: x.completed })),
         },
         settings.geminiModel,
+        files,
       );
       if (!p.steps.length) setError('Gemini did not suggest any steps. Try adding more detail.');
       setPlan(p);
@@ -137,8 +143,10 @@ export default function AIProjectPlanner({
                 style={[styles.input, styles.multi, { color: t.text, borderColor: t.border, backgroundColor: t.surface }]}
               />
               <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 6 }}>
-                Include the goal, what "done" looks like and anything you already know about the work.
+                Include the goal, what "done" looks like and anything you already know about the work. Attach specs,
+                requirements or a photo of your notes and Gemini will plan from them.
               </Text>
+              <AttachmentBar value={files} onChange={setFiles} />
               <Label>Deadline</Label>
               <DateTimeField value={deadline} onChange={setDeadline} />
               {deadline && (
@@ -224,8 +232,8 @@ export default function AIProjectPlanner({
           <Button kind="secondary" label="Cancel" onPress={() => onClose()} style={{ flex: 1 }} />
           {hasKey && !plan && (
             <Button
-              label={busy ? 'Planning…' : 'Draft steps'}
-              disabled={busy || (!project && !description.trim())}
+              label={busy ? (files.length ? 'Reading files…' : 'Planning…') : 'Draft steps'}
+              disabled={busy || (!project && !description.trim() && !files.length)}
               onPress={run}
               style={{ flex: 1 }}
             />

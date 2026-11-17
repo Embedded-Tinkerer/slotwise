@@ -43,3 +43,8 @@ test('falls back sensibly on junk', () => {
   assert.equal(plan.sequential, true);
   assert.deepEqual(plan.steps, []);
 });
+
+test('prompt mentions attached files', () => {
+  const p = buildProjectPrompt({ description: 'x', attachmentNames: ['spec.pdf', 'board.jpg'] }, new Date(2030, 0, 7));
+  assert.match(p, /attached: spec\.pdf, board\.jpg/);
+});

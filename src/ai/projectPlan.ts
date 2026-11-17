@@ -17,6 +17,8 @@ export interface ProjectPlanInput {
   deadline?: string;
   existingSteps?: { title: string; durationMin: number; completed: boolean }[];
   projectName?: string;
+  /** Names of files attached to the request (sent separately). */
+  attachmentNames?: string[];
 }
 
 export interface PlannedStep {
@@ -71,6 +73,13 @@ export function buildProjectPrompt(input: ProjectPlanInput, now: Date): string {
     for (const s of input.existingSteps) {
       lines.push(`- ${s.title} (${s.durationMin} min${s.completed ? ', done' : ''})`);
     }
+  }
+  if (input.attachmentNames?.length) {
+    lines.push(
+      '',
+      `The person attached: ${input.attachmentNames.join(', ')}. Read them closely and base the steps on`,
+      'them (requirements, specs, checklists, schedules). Mention the relevant document in step notes.',
+    );
   }
   lines.push(
     '',
