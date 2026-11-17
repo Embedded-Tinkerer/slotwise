@@ -9,8 +9,22 @@ meetings, and re-plans automatically when something slips.
 
 - **Tasks** with duration, priority (ASAP, High, Medium, Low), deadline, a
   "don't start before" date, and an option to split into smaller blocks.
-- **Auto-scheduling** into free time inside your working hours, highest
-  priority first, then earliest deadline.
+- **Auto-scheduling** into free time, highest priority first, then earliest
+  deadline. ASAP work goes first, then hard deadlines.
+- **Day, week and agenda views** with your meetings and planned task blocks,
+  a "now / next" card, and actions on every block: done, need more time, pin to
+  this time, move to tomorrow.
+- **Projects** with a deadline and ordered steps: each step is scheduled after
+  the one before it, and you see when the whole project will finish.
+- **Recurring tasks and habits**: every day, weekdays, certain days, or
+  "3 times a week" spread across the week, at a preferred time of day.
+- **Work and personal hours**: each task, project or habit goes in one or the
+  other.
+- **Pinned tasks** stay at a fixed time; everything else flows around them.
+- **Labels, search and filters** (work, personal, at risk, project, label).
+- **Reminders** a few minutes before each task block.
+- **Planned blocks on your calendars**: optionally adds task blocks to a
+  "Slotwise" calendar in Google and/or Outlook so others see you as busy.
 - **Re-planning**: the plan is always rebuilt from *now*, so a block you didn't
   finish rolls forward to the next free slot. Log a block as done and only the
   remaining time is scheduled.

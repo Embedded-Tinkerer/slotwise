@@ -42,6 +42,8 @@ export function providerConfig(id: ProviderId): ProviderConfig {
         'openid',
         'email',
         'https://www.googleapis.com/auth/calendar.readonly',
+        // Lets the app create and fill its own "Slotwise" calendar, nothing else.
+        'https://www.googleapis.com/auth/calendar.app.created',
         // Read/write so finishing a task in Slotwise ticks it off in Google Tasks.
         'https://www.googleapis.com/auth/tasks',
       ],
@@ -57,7 +59,7 @@ export function providerConfig(id: ProviderId): ProviderConfig {
   return {
     clientId: MS_CLIENT_ID,
     redirectUri: `${APP_SCHEME}://auth`,
-    scopes: ['openid', 'profile', 'offline_access', 'User.Read', 'Calendars.Read'],
+    scopes: ['openid', 'profile', 'offline_access', 'User.Read', 'Calendars.ReadWrite'],
     discovery: {
       authorizationEndpoint: `${base}/authorize`,
       tokenEndpoint: `${base}/token`,

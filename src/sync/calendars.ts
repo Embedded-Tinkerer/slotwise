@@ -38,14 +38,14 @@ export async function googleAccount(): Promise<string> {
   return me.email ?? 'Google account';
 }
 
-export async function fetchGoogleEvents(from: Date, to: Date): Promise<CalendarEvent[]> {
+export async function fetchGoogleEvents(from: Date, to: Date, excludeIds: string[] = []): Promise<CalendarEvent[]> {
   const token = await getAccessToken('google');
   const list = await getJson<GCalList>(
     'https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader',
     token,
   );
   // Calendars shown in Google Calendar (checked) count as busy time.
-  const cals = list.items.filter((c) => c.primary || c.selected);
+  const cals = list.items.filter((c) => (c.primary || c.selected) && !excludeIds.includes(c.id));
   const out: CalendarEvent[] = [];
   for (const cal of cals) {
     let pageToken: string | undefined;

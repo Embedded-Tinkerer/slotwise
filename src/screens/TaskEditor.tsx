@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,28 +7,63 @@ import { Button, Chip, Label } from '../components/ui';
 import { fmtDuration } from '../format';
 import { useStore } from '../store';
 import { PRIORITY_COLORS, useTheme } from '../theme';
-import { PRIORITY_LABELS, type Priority, type Task } from '../types';
+import { PRIORITY_LABELS, SCHEDULE_LABELS, type Priority, type ScheduleId, type Task } from '../types';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
 
+function ToggleRow({ title, hint, value, onChange }: { title: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
+  const t = useTheme();
+  return (
+    <View style={styles.switchRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: t.text, fontWeight: '600' }}>{title}</Text>
+        {hint && <Text style={{ color: t.textMuted, fontSize: 13 }}>{hint}</Text>}
+      </View>
+      <Switch value={value} onValueChange={onChange} />
+    </View>
+  );
+}
+
 export default function TaskEditor({
   task,
+  defaults,
   visible,
   onClose,
 }: {
   task?: Task;
+  defaults?: Partial<Task>;
   visible: boolean;
   onClose: () => void;
 }) {
   const t = useTheme();
-  const { saveTask, deleteTask, completeTask } = useStore();
-  const [title, setTitle] = useState(task?.title ?? '');
-  const [notes, setNotes] = useState(task?.notes ?? '');
-  const [durationMin, setDuration] = useState(task?.durationMin ?? 60);
-  const [priority, setPriority] = useState<Priority>(task?.priority ?? 3);
-  const [deadline, setDeadline] = useState<string | undefined>(task?.deadline);
-  const [startAfter, setStartAfter] = useState<string | undefined>(task?.startAfter);
-  const [splittable, setSplittable] = useState(task?.splittable ?? true);
+  const { saveTask, deleteTask, completeTask, projects, tasks } = useStore();
+  const init = { ...defaults, ...task };
+  const [title, setTitle] = useState(init.title ?? '');
+  const [notes, setNotes] = useState(init.notes ?? '');
+  const [durationMin, setDuration] = useState(init.durationMin ?? 60);
+  const [priority, setPriority] = useState<Priority>(init.priority ?? 3);
+  const [deadline, setDeadline] = useState<string | undefined>(init.deadline);
+  const [hardDeadline, setHard] = useState(init.hardDeadline ?? false);
+  const [startAfter, setStartAfter] = useState<string | undefined>(init.startAfter);
+  const [pinnedStart, setPinned] = useState<string | undefined>(init.pinnedStart);
+  const [splittable, setSplittable] = useState(init.splittable ?? true);
+  const [projectId, setProjectId] = useState<string | undefined>(init.projectId);
+  const project = projects.find((p) => p.id === projectId);
+  const [schedule, setSchedule] = useState<ScheduleId | undefined>(init.schedule);
+  const [labels, setLabels] = useState<string[]>(init.labels ?? []);
+  const [labelText, setLabelText] = useState('');
+
+  const knownLabels = useMemo(
+    () => [...new Set(tasks.flatMap((x) => x.labels ?? []))].filter((l) => !labels.includes(l)).sort(),
+    [tasks, labels],
+  );
+  const effectiveSchedule: ScheduleId = schedule ?? project?.schedule ?? (task?.external ? 'personal' : 'work');
+
+  const addLabel = (l: string) => {
+    const v = l.trim().replace(/^#/, '');
+    if (v && !labels.includes(v)) setLabels([...labels, v]);
+    setLabelText('');
+  };
 
   const save = () => {
     if (!title.trim()) return;
@@ -39,8 +74,13 @@ export default function TaskEditor({
       durationMin,
       priority,
       deadline,
+      hardDeadline: deadline ? hardDeadline : undefined,
       startAfter,
+      pinnedStart,
       splittable,
+      projectId,
+      schedule: effectiveSchedule,
+      labels: labels.length ? labels : undefined,
       // Never leave more logged progress than the new duration allows.
       doneMin: Math.min(task?.doneMin ?? 0, durationMin),
     });
@@ -96,19 +136,69 @@ export default function TaskEditor({
             ))}
           </View>
 
-          <Label>Deadline</Label>
+          <Label>When can it happen?</Label>
+          <View style={styles.wrap}>
+            {(['work', 'personal'] as ScheduleId[]).map((s) => (
+              <Chip key={s} label={SCHEDULE_LABELS[s]} selected={effectiveSchedule === s} onPress={() => setSchedule(s)} />
+            ))}
+          </View>
+
+          {projects.some((p) => !p.archived) && (
+            <>
+              <Label>Project</Label>
+              <View style={styles.wrap}>
+                <Chip label="None" selected={!projectId} onPress={() => setProjectId(undefined)} />
+                {projects
+                  .filter((p) => !p.archived)
+                  .map((p) => (
+                    <Chip key={p.id} label={p.name} color={p.color} selected={projectId === p.id} onPress={() => setProjectId(p.id)} />
+                  ))}
+              </View>
+            </>
+          )}
+
+          <Label>Deadline{project?.deadline && !deadline ? ' (uses the project deadline)' : ''}</Label>
           <DateTimeField value={deadline} onChange={setDeadline} />
+          {deadline && (
+            <ToggleRow
+              title="Hard deadline"
+              hint="Scheduled ahead of everything except ASAP work."
+              value={hardDeadline}
+              onChange={setHard}
+            />
+          )}
 
           <Label>Don't start before</Label>
           <DateTimeField value={startAfter} onChange={setStartAfter} defaultHour={9} />
 
-          <View style={styles.switchRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: t.text, fontWeight: '600' }}>Can be split into smaller blocks</Text>
-              <Text style={{ color: t.textMuted, fontSize: 13 }}>Blocks are at least 30 minutes long.</Text>
-            </View>
-            <Switch value={splittable} onValueChange={setSplittable} />
+          <Label>Pin to a fixed time</Label>
+          <DateTimeField value={pinnedStart} onChange={setPinned} defaultHour={9} />
+
+          <ToggleRow
+            title="Can be split into smaller blocks"
+            hint="Blocks are at least 30 minutes long."
+            value={splittable}
+            onChange={setSplittable}
+          />
+
+          <Label>Labels</Label>
+          <View style={styles.wrap}>
+            {labels.map((l) => (
+              <Chip key={l} label={`#${l} ✕`} selected onPress={() => setLabels(labels.filter((x) => x !== l))} />
+            ))}
+            {knownLabels.map((l) => (
+              <Chip key={l} label={`#${l}`} onPress={() => addLabel(l)} />
+            ))}
           </View>
+          <TextInput
+            value={labelText}
+            onChangeText={(v) => (v.endsWith(',') || v.endsWith(' ') ? addLabel(v.slice(0, -1)) : setLabelText(v))}
+            onSubmitEditing={() => addLabel(labelText)}
+            placeholder="Add a label, e.g. errands"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            style={[styles.input, { color: t.text, borderColor: t.border, backgroundColor: t.surface }]}
+          />
 
           <Label>Notes</Label>
           <TextInput

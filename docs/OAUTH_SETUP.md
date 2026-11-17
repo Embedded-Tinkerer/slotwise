@@ -1,7 +1,8 @@
 # Connecting Google Calendar and Outlook
 
 Slotwise reads your calendars so it can schedule tasks around your meetings,
-and imports your Google Tasks. It only asks for **read-only** calendar access, signs in with OAuth + PKCE (no
+imports your Google Tasks, and can put planned task blocks on a separate
+"Slotwise" calendar. It never changes your existing events, signs in with OAuth + PKCE (no
 client secret is stored in the app), and keeps tokens in Android's encrypted
 secure storage on your phone. No server is involved: the phone talks to Google
 and Microsoft directly.
@@ -25,10 +26,13 @@ IDs as GitHub secrets so the APK build includes them. About 15 minutes total.
    - **Audience**: choose **External**. Under **Test users**, add your own
      Gmail address.
    - **Data access**: add the scopes
-     `https://www.googleapis.com/auth/calendar.readonly` and
+     `https://www.googleapis.com/auth/calendar.readonly`,
+     `https://www.googleapis.com/auth/calendar.app.created` and
      `https://www.googleapis.com/auth/tasks` (optional, the app asks for them
-     anyway). The Tasks scope is read/write so that finishing an imported task
-     in Slotwise ticks it off in Google Tasks.
+     anyway). `calendar.app.created` only lets Slotwise manage the separate
+     "Slotwise" calendar it creates for planned task blocks. The Tasks scope is
+     read/write so that finishing an imported task in Slotwise ticks it off in
+     Google Tasks.
 4. Create the client: **Clients → Create client**.
    - **Application type: iOS** (yes, iOS, even though you are on Android; see
      the note below).
@@ -62,8 +66,10 @@ IDs as GitHub secrets so the APK build includes them. About 15 minutes total.
 3. Click **Register** and copy the **Application (client) ID** from the
    Overview page.
 4. **API permissions → Add a permission → Microsoft Graph → Delegated
-   permissions**, add `Calendars.Read`, `User.Read`, `offline_access`,
-   `openid`, `profile`.
+   permissions**, add `Calendars.ReadWrite`, `User.Read`, `offline_access`,
+   `openid`, `profile`. Write access is only used for the separate
+   "Slotwise" calendar that shows your planned task blocks, and only if you
+   turn that on in the app.
 
 **If your work account blocks it.** Many companies don't let users consent to
 third-party apps. If you see *"Need admin approval"* when connecting Outlook,

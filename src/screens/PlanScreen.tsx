@@ -1,56 +1,98 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { BlockSheet, type SheetTarget } from '../components/BlockSheet';
+import { Timeline, type TimelineItem } from '../components/Timeline';
 import { Card } from '../components/ui';
 import { addDays, fmtDay, fmtDuration, fmtTime, sameLocalDay, startOfDay } from '../format';
+import { weekStart } from '../plan';
 import { useStore } from '../store';
 import { PRIORITY_COLORS, SOURCE_COLORS, SOURCE_LABELS, useTheme } from '../theme';
-import { PRIORITY_LABELS, type CalendarEvent, type ScheduledBlock, type Task } from '../types';
+import { PRIORITY_LABELS, type Task } from '../types';
+import TaskEditor from './TaskEditor';
 
-type Item =
-  | { kind: 'event'; start: number; end: number; event: CalendarEvent }
-  | { kind: 'task'; start: number; end: number; block: ScheduledBlock; task: Task };
+type Mode = 'day' | 'week' | 'list';
 
 export default function PlanScreen() {
   const t = useTheme();
-  const { plan, tasks, allEvents, now, syncAll, logProgress, completeTask, connections } = useStore();
-  const [dayOffset, setDayOffset] = useState(0);
+  const store = useStore();
+  const { plan, tasks, allEvents, now, syncAll, completeTask, logProgress, lookup, projects, settings } = store;
+  const [mode, setMode] = useState<Mode>('day');
+  const [anchor, setAnchor] = useState(() => startOfDay(Date.now()).getTime());
+  const [sheet, setSheet] = useState<SheetTarget | null>(null);
+  const [editing, setEditing] = useState<Task | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const today = startOfDay(now);
-  const day = addDays(today, dayOffset);
-  const taskById = useMemo(() => new Map(tasks.map((x) => [x.id, x])), [tasks]);
+  const day = new Date(anchor);
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
 
-  const items: Item[] = useMemo(() => {
-    const list: Item[] = [];
+  const colorFor = (taskId: string) => {
+    const task = lookup(taskId);
+    if (!task) return t.accent;
+    const p = task.projectId ? projectById.get(task.projectId) : undefined;
+    return p?.color ?? PRIORITY_COLORS[task.priority];
+  };
+
+  const items: TimelineItem[] = useMemo(() => {
+    const out: TimelineItem[] = [];
     for (const e of allEvents) {
-      if (e.allDay || !sameLocalDay(e.start, day)) continue;
-      list.push({ kind: 'event', start: Date.parse(e.start), end: Date.parse(e.end), event: e });
+      if (e.allDay) continue;
+      out.push({
+        key: e.id + e.start,
+        start: Date.parse(e.start),
+        end: Date.parse(e.end),
+        title: e.title,
+        subtitle: SOURCE_LABELS[e.source],
+        color: SOURCE_COLORS[e.source],
+        kind: 'event',
+      });
     }
     for (const b of plan.blocks) {
-      const task = taskById.get(b.taskId);
-      if (!task || !sameLocalDay(b.start, day)) continue;
-      list.push({ kind: 'task', start: Date.parse(b.start), end: Date.parse(b.end), block: b, task });
+      const task = lookup(b.taskId);
+      if (!task) continue;
+      out.push({
+        key: `${b.taskId}@${b.start}`,
+        start: Date.parse(b.start),
+        end: Date.parse(b.end),
+        title: task.recurrence ? `↻ ${task.title}` : task.title,
+        subtitle: PRIORITY_LABELS[task.priority],
+        color: colorFor(b.taskId),
+        kind: 'task',
+        taskId: b.taskId,
+        pinned: b.pinned,
+        warn: plan.atRisk.includes(b.taskId),
+      });
     }
-    return list.sort((a, b) => a.start - b.start);
-  }, [allEvents, plan.blocks, taskById, day]);
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allEvents, plan, lookup, projectById]);
 
-  const allDay = allEvents.filter((e) => e.allDay && sameLocalDay(e.start, day));
-  const dueToday = tasks.filter((x) => x.deadline && sameLocalDay(x.deadline, day));
-  const warnings = [
-    ...plan.atRisk.map((id) => taskById.get(id)?.title).filter(Boolean),
-  ] as string[];
-  const unscheduledCount = plan.unscheduled.length;
-  const focusMin = items.filter((i) => i.kind === 'task').reduce((s, i) => s + (i.end - i.start) / 60000, 0);
-
-  const onTaskPress = (item: Extract<Item, { kind: 'task' }>) => {
-    const blockMin = Math.round((item.end - item.start) / 60000);
-    Alert.alert(item.task.title, `${fmtTime(item.start)} to ${fmtTime(item.end)}`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: `Did this block (${fmtDuration(blockMin)})`, onPress: () => logProgress(item.task.id, blockMin) },
-      { text: 'Task finished', onPress: () => completeTask(item.task.id) },
-    ]);
+  const openItem = (it: TimelineItem) => {
+    if (it.kind !== 'task' || !it.taskId) return;
+    setSheet({ taskId: it.taskId, start: it.start, end: it.end, pinned: it.pinned });
   };
+  const editTask = (id: string) => setEditing(tasks.find((x) => x.id === id) ?? null);
+
+  // Current or next block today, for the quick "now" card.
+  const current = plan.blocks.find((b) => Date.parse(b.start) <= now && now < Date.parse(b.end));
+  const next = current ?? plan.blocks.find((b) => Date.parse(b.start) > now && sameLocalDay(b.start, now));
+  const nextTask = next ? lookup(next.taskId) : undefined;
+
+  const atRisk = plan.atRisk.map((id) => lookup(id)?.title).filter(Boolean) as string[];
+  const unscheduled = plan.unscheduled.filter((u) => !lookup(u.taskId)?.recurrence);
+
+  const shift = (n: number) => setAnchor(addDays(day, n * (mode === 'week' ? 7 : 1)).getTime());
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart(anchor), i));
+  const firstWork = Math.min(
+    ...[...settings.schedules.work, ...settings.schedules.personal].filter((d) => d.enabled).map((d) => d.startMin),
+    8 * 60,
+  );
+  const scrollTo = sameLocalDay(day, now) || mode === 'week' ? Math.max(0, (now - today.getTime()) / 60000 - 90) : firstWork - 30;
+
+  const dayItems = (d: Date) => items.filter((i) => sameLocalDay(i.start, d)).sort((a, b) => a.start - b.start);
+  const dueOn = (d: Date) => tasks.filter((x) => x.deadline && sameLocalDay(x.deadline, d));
+  const allDayOn = (d: Date) => allEvents.filter((e) => e.allDay && sameLocalDay(e.start, d));
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -58,207 +100,216 @@ export default function PlanScreen() {
     setRefreshing(false);
   };
 
-  const connected = Object.values(connections).some((c) => c?.account);
+  const headerLabel =
+    mode === 'week'
+      ? `${fmtDay(weekDays[0])} to ${fmtDay(weekDays[6])}`
+      : sameLocalDay(day, now)
+        ? `Today, ${fmtDay(day)}`
+        : fmtDay(day);
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ flexGrow: 0 }}
-        contentContainerStyle={styles.days}
-      >
-        {Array.from({ length: 7 }, (_, i) => {
-          const d = addDays(today, i);
-          const selected = i === dayOffset;
-          return (
+      {/* Mode switch and navigation */}
+      <View style={styles.toolbar}>
+        <View style={[styles.segment, { backgroundColor: t.surfaceAlt }]}>
+          {(['day', 'week', 'list'] as Mode[]).map((m) => (
             <Pressable
-              key={i}
-              onPress={() => setDayOffset(i)}
-              style={[
-                styles.day,
-                { backgroundColor: selected ? t.accent : t.surface, borderColor: selected ? t.accent : t.border },
-              ]}
+              key={m}
+              onPress={() => setMode(m)}
+              style={[styles.segBtn, mode === m && { backgroundColor: t.surface }]}
             >
-              <Text style={{ color: selected ? t.accentText : t.textMuted, fontSize: 12, fontWeight: '600' }}>
-                {i === 0 ? 'Today' : d.toLocaleDateString([], { weekday: 'short' })}
-              </Text>
-              <Text style={{ color: selected ? t.accentText : t.text, fontSize: 18, fontWeight: '700' }}>
-                {d.getDate()}
+              <Text style={{ color: mode === m ? t.text : t.textMuted, fontWeight: '700', fontSize: 13 }}>
+                {m === 'day' ? 'Day' : m === 'week' ? 'Week' : 'Agenda'}
               </Text>
             </Pressable>
-          );
-        })}
-      </ScrollView>
+          ))}
+        </View>
+        <View style={styles.nav}>
+          <Pressable onPress={() => shift(-1)} hitSlop={10} style={styles.navBtn}>
+            <Text style={{ color: t.text, fontSize: 20 }}>‹</Text>
+          </Pressable>
+          <Pressable onPress={() => setAnchor(today.getTime())} hitSlop={6}>
+            <Text style={{ color: t.accent, fontWeight: '700' }}>Today</Text>
+          </Pressable>
+          <Pressable onPress={() => shift(1)} hitSlop={10} style={styles.navBtn}>
+            <Text style={{ color: t.text, fontSize: 20 }}>›</Text>
+          </Pressable>
+        </View>
+      </View>
+      <Text style={[styles.dateLabel, { color: t.text }]}>{headerLabel}</Text>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        <Text style={[styles.heading, { color: t.text }]}>{fmtDay(day)}</Text>
-        <Text style={{ color: t.textMuted, marginBottom: 12 }}>
-          {fmtDuration(focusMin)} of task time planned
-          {connected ? ' · pull down to sync calendars' : ''}
-        </Text>
-
-        {(warnings.length > 0 || unscheduledCount > 0) && (
-          <View style={[styles.warn, { backgroundColor: t.warnBg }]}>
-            {warnings.length > 0 && (
-              <Text style={{ color: t.warn, fontWeight: '700' }}>
-                May miss deadline: {warnings.join(', ')}
-              </Text>
-            )}
-            {unscheduledCount > 0 && (
-              <Text style={{ color: t.warn, marginTop: warnings.length ? 4 : 0 }}>
-                {unscheduledCount} task{unscheduledCount > 1 ? 's' : ''} did not fit in the planning window.
-              </Text>
-            )}
-          </View>
-        )}
-
-        {allDay.map((e) => (
-          <View key={e.id} style={[styles.allDay, { backgroundColor: t.event }]}>
-            <Text style={{ color: t.eventText, fontWeight: '600' }} numberOfLines={1}>
-              All day · {e.title}
+      {/* Now / next card */}
+      {next && nextTask && (
+        <Pressable
+          onPress={() => setSheet({ taskId: next.taskId, start: Date.parse(next.start), end: Date.parse(next.end), pinned: next.pinned })}
+          style={[styles.nowCard, { backgroundColor: t.surface, borderColor: current ? t.accent : t.border }]}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: current ? t.accent : t.textMuted, fontSize: 12, fontWeight: '800' }}>
+              {current ? `NOW · until ${fmtTime(next.end)}` : `NEXT · ${fmtTime(next.start)}`}
+            </Text>
+            <Text style={{ color: t.text, fontWeight: '800', fontSize: 15 }} numberOfLines={1}>
+              {nextTask.title}
             </Text>
           </View>
-        ))}
+          {current && (
+            <Pressable
+              onPress={() => logProgress(next.taskId, Math.round((Date.parse(next.end) - Date.parse(next.start)) / 60000))}
+              style={[styles.doneBtn, { backgroundColor: t.accent }]}
+            >
+              <Text style={{ color: t.accentText, fontWeight: '800' }}>Done</Text>
+            </Pressable>
+          )}
+        </Pressable>
+      )}
 
-        {dueToday.length > 0 && (
-          <View style={[styles.dueBox, { backgroundColor: t.surface, borderColor: t.border }]}>
-            <Text style={[styles.dueHead, { color: t.textMuted }]}>Due this day</Text>
-            {dueToday.map((task) => (
-              <Pressable
-                key={task.id}
-                onPress={() => completeTask(task.id, !task.completed)}
-                style={styles.dueRow}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: task.completed }}
-              >
-                <View
-                  style={[
-                    styles.dueCheck,
-                    { borderColor: PRIORITY_COLORS[task.priority] },
-                    task.completed && { backgroundColor: PRIORITY_COLORS[task.priority] },
-                  ]}
-                >
-                  {task.completed && <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>✓</Text>}
-                </View>
-                <Text
-                  style={[
-                    { flex: 1, color: t.text, fontWeight: '600' },
-                    task.completed && { textDecorationLine: 'line-through', color: t.textMuted },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {task.title}
-                </Text>
-                {task.external && <Text style={[styles.badge, { color: SOURCE_COLORS.google }]}>Google Tasks</Text>}
-              </Pressable>
-            ))}
-          </View>
-        )}
-
-        {items.length === 0 && (
-          <Card>
-            <Text style={{ color: t.textMuted }}>
-              Nothing planned for this day. Add tasks and they will be placed into your free working time.
+      {(atRisk.length > 0 || unscheduled.length > 0) && (
+        <View style={[styles.warn, { backgroundColor: t.warnBg }]}>
+          {atRisk.length > 0 && (
+            <Text style={{ color: t.warn, fontWeight: '700' }} numberOfLines={2}>
+              May miss deadline: {atRisk.join(', ')}
             </Text>
-          </Card>
-        )}
+          )}
+          {unscheduled.length > 0 && (
+            <Text style={{ color: t.warn }}>
+              {unscheduled.length} task{unscheduled.length > 1 ? 's' : ''} did not fit in the next {settings.horizonDays} days.
+            </Text>
+          )}
+        </View>
+      )}
 
-        {items.map((item) => {
-          const past = item.end <= now;
-          const isNow = item.start <= now && now < item.end;
-          if (item.kind === 'event') {
-            const e = item.event;
-            return (
-              <View
-                key={e.id + item.start}
-                style={[styles.row, { backgroundColor: t.event, opacity: past ? 0.55 : 1 }]}
-              >
-                <View style={[styles.bar, { backgroundColor: SOURCE_COLORS[e.source] }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.time, { color: t.eventText }]}>
-                    {fmtTime(item.start)} to {fmtTime(item.end)}
-                  </Text>
-                  <Text style={[styles.title, { color: t.eventText }]} numberOfLines={2}>
+      {mode !== 'list' && (
+        <>
+          {mode === 'day' && (dueOn(day).length > 0 || allDayOn(day).length > 0) && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={styles.chips}>
+              {allDayOn(day).map((e) => (
+                <View key={e.id} style={[styles.pill, { backgroundColor: t.event }]}>
+                  <Text style={{ color: t.eventText, fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
                     {e.title}
                   </Text>
-                  <Text style={{ color: t.eventText, fontSize: 12, opacity: 0.8 }}>
-                    {SOURCE_LABELS[e.source]}
-                    {e.busy ? '' : ' · free'}
-                  </Text>
                 </View>
+              ))}
+              {dueOn(day).map((task) => (
+                <Pressable
+                  key={task.id}
+                  onPress={() => completeTask(task.id, !task.completed)}
+                  style={[styles.pill, { borderColor: PRIORITY_COLORS[task.priority], borderWidth: 1, backgroundColor: t.surface }]}
+                >
+                  <Text
+                    style={[
+                      { color: t.text, fontSize: 12, fontWeight: '600' },
+                      task.completed && { textDecorationLine: 'line-through', color: t.textMuted },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {task.completed ? '✓ ' : '○ '}Due: {task.title}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+          <Timeline
+            days={mode === 'week' ? weekDays : [day]}
+            items={items}
+            now={now}
+            hourHeight={mode === 'week' ? 40 : 60}
+            scrollToMin={scrollTo}
+            onPressItem={openItem}
+            onPressDay={(d) => {
+              setAnchor(d.getTime());
+              setMode('day');
+            }}
+          />
+        </>
+      )}
+
+      {mode === 'list' && (
+        <ScrollView
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        >
+          {Array.from({ length: 7 }, (_, i) => addDays(day, i)).map((d) => {
+            const its = dayItems(d);
+            const due = dueOn(d).filter((x) => !x.completed);
+            if (!its.length && !due.length) return null;
+            const focus = its.filter((i) => i.kind === 'task').reduce((s, i) => s + (i.end - i.start) / 60000, 0);
+            return (
+              <View key={d.toISOString()}>
+                <Text style={[styles.listDay, { color: t.textMuted }]}>
+                  {sameLocalDay(d, now) ? 'Today' : fmtDay(d)} · {fmtDuration(focus)} of tasks
+                </Text>
+                {due.map((x) => (
+                  <Text key={x.id} style={{ color: t.text, marginBottom: 6 }}>
+                    ○ Due: {x.title}
+                  </Text>
+                ))}
+                {its.map((it) => (
+                  <Pressable
+                    key={it.key}
+                    onPress={() => openItem(it)}
+                    style={[
+                      styles.row,
+                      { backgroundColor: it.kind === 'task' ? t.surface : t.event, borderColor: t.border, opacity: it.end <= now ? 0.55 : 1 },
+                    ]}
+                  >
+                    <View style={[styles.bar, { backgroundColor: it.color }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: t.textMuted, fontSize: 12, fontWeight: '600' }}>
+                        {fmtTime(it.start)} to {fmtTime(it.end)}
+                      </Text>
+                      <Text style={{ color: it.kind === 'task' ? t.text : t.eventText, fontWeight: '700', fontSize: 15 }}>
+                        {it.pinned ? '📌 ' : ''}
+                        {it.title}
+                      </Text>
+                      <Text style={{ color: it.warn ? t.warn : t.textMuted, fontSize: 12 }}>
+                        {it.subtitle}
+                        {it.warn ? ' · at risk' : ''}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))}
               </View>
             );
-          }
-          const risk = plan.atRisk.includes(item.task.id);
-          return (
-            <Pressable
-              key={`${item.task.id}-${item.start}`}
-              onPress={() => onTaskPress(item)}
-              style={[
-                styles.row,
-                {
-                  backgroundColor: t.surface,
-                  borderColor: isNow ? t.accent : t.border,
-                  borderWidth: isNow ? 2 : 1,
-                  opacity: past ? 0.55 : 1,
-                },
-              ]}
-            >
-              <View style={[styles.bar, { backgroundColor: PRIORITY_COLORS[item.task.priority] }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.time, { color: t.textMuted }]}>
-                  {isNow ? 'Now · ' : ''}
-                  {fmtTime(item.start)} to {fmtTime(item.end)}
-                </Text>
-                <Text style={[styles.title, { color: t.text }]} numberOfLines={2}>
-                  {item.task.title}
-                </Text>
-                <Text style={{ color: risk ? t.warn : t.textMuted, fontSize: 12 }}>
-                  {PRIORITY_LABELS[item.task.priority]}
-                  {item.task.deadline ? ` · due ${fmtDay(item.task.deadline)} ${fmtTime(item.task.deadline)}` : ''}
-                  {risk ? ' · at risk' : ''}
-                  {item.task.external ? ' · Google Tasks' : ''}
-                </Text>
-              </View>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+          })}
+          {items.length === 0 && (
+            <Card>
+              <Text style={{ color: t.textMuted }}>
+                Nothing planned yet. Add tasks and they will be placed into your free time.
+              </Text>
+            </Card>
+          )}
+        </ScrollView>
+      )}
+
+      <BlockSheet target={sheet} onClose={() => setSheet(null)} onEdit={editTask} />
+      {editing && <TaskEditor visible task={editing} onClose={() => setEditing(null)} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  days: { paddingHorizontal: 16, paddingVertical: 10 },
-  day: {
-    width: 58,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  content: { paddingHorizontal: 16, paddingBottom: 32 },
-  heading: { fontSize: 22, fontWeight: '800', marginTop: 4 },
-  warn: { borderRadius: 12, padding: 12, marginBottom: 12 },
-  allDay: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
-  row: {
+  toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 6 },
+  segment: { flexDirection: 'row', borderRadius: 10, padding: 3 },
+  segBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  nav: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  navBtn: { paddingHorizontal: 6 },
+  dateLabel: { fontSize: 17, fontWeight: '800', paddingHorizontal: 16, marginTop: 8, marginBottom: 6 },
+  nowCard: {
     flexDirection: 'row',
-    borderRadius: 12,
-    padding: 12,
+    alignItems: 'center',
+    marginHorizontal: 16,
     marginBottom: 8,
-    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 10,
   },
+  doneBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  warn: { marginHorizontal: 16, borderRadius: 10, padding: 10, marginBottom: 8 },
+  chips: { paddingHorizontal: 16, paddingBottom: 8, gap: 6 },
+  pill: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5, maxWidth: 220 },
+  list: { paddingHorizontal: 16, paddingBottom: 32 },
+  listDay: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 14, marginBottom: 8 },
+  row: { flexDirection: 'row', borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 8, gap: 12 },
   bar: { width: 4, borderRadius: 2 },
-  dueBox: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 10 },
-  dueHead: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
-  dueCheck: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  badge: { fontSize: 11, fontWeight: '700' },
-  time: { fontSize: 12, fontWeight: '600' },
-  title: { fontSize: 16, fontWeight: '700', marginVertical: 2 },
 });

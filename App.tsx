@@ -4,18 +4,25 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, useColorScheme } 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import PlanScreen from './src/screens/PlanScreen';
+import ProjectsScreen from './src/screens/ProjectsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import TasksScreen from './src/screens/TasksScreen';
 import { StoreProvider, useStore } from './src/store';
 import { useTheme } from './src/theme';
 
-type Tab = 'plan' | 'tasks' | 'settings';
+type Tab = 'plan' | 'tasks' | 'projects' | 'settings';
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'plan', label: 'Plan', icon: '◷' },
   { id: 'tasks', label: 'Tasks', icon: '☰' },
-  { id: 'settings', label: 'Calendars', icon: '⚙' },
+  { id: 'projects', label: 'Projects', icon: '▤' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
-const TITLES: Record<Tab, string> = { plan: 'Your plan', tasks: 'Tasks', settings: 'Calendars & hours' };
+const TITLES: Record<Tab, string> = {
+  plan: 'Your plan',
+  tasks: 'Tasks',
+  projects: 'Projects',
+  settings: 'Calendars & settings',
+};
 
 function Shell() {
   const t = useTheme();
@@ -37,6 +44,8 @@ function Shell() {
           <PlanScreen />
         ) : tab === 'tasks' ? (
           <TasksScreen />
+        ) : tab === 'projects' ? (
+          <ProjectsScreen />
         ) : (
           <SettingsScreen />
         )}

@@ -125,3 +125,87 @@ test('reports tasks that do not fit in the horizon', () => {
   );
   assert.equal(r.unscheduled[0].remainingMin, 10_000 - 8 * 60);
 });
+
+// ---------- newer features ----------
+
+test('pinned tasks keep their time and block others', () => {
+  const r = schedule(
+    [task({ id: 'pin', pinnedStart: at(7, 9) }), task({ id: 'a', priority: 1 })],
+    [],
+    DEFAULT_SETTINGS,
+    MONDAY_8AM,
+  );
+  const pin = r.blocks.find((b) => b.taskId === 'pin')!;
+  assert.equal(pin.start, at(7, 9));
+  assert.equal(pin.pinned, true);
+  assert.equal(r.blocks.find((b) => b.taskId === 'a')!.start, at(7, 10));
+});
+
+test('a pinned time that already passed is re-planned', () => {
+  const r = schedule([task({ id: 'pin', pinnedStart: at(6, 9) })], [], DEFAULT_SETTINGS, MONDAY_8AM);
+  assert.equal(r.blocks[0].start, at(7, 9));
+  assert.equal(r.blocks[0].pinned, undefined);
+});
+
+test('hard deadlines jump ahead of higher priority work', () => {
+  const r = schedule(
+    [
+      task({ id: 'high', priority: 2, durationMin: 240 }),
+      task({ id: 'hard', priority: 4, deadline: at(7, 12), hardDeadline: true }),
+    ],
+    [],
+    DEFAULT_SETTINGS,
+    MONDAY_8AM,
+  );
+  assert.equal(r.blocks[0].taskId, 'hard');
+  assert.deepEqual(r.atRisk, []);
+});
+
+test('dependent steps start after the previous step', () => {
+  const r = schedule(
+    [
+      task({ id: 'step2', priority: 1, dependsOn: ['step1'] } as never),
+      task({ id: 'step1', priority: 4 }),
+    ],
+    [],
+    DEFAULT_SETTINGS,
+    MONDAY_8AM,
+  );
+  assert.equal(r.blocks[0].taskId, 'step1');
+  assert.equal(r.blocks[1].taskId, 'step2');
+  assert.equal(r.blocks[1].start, at(7, 10));
+});
+
+test('personal tasks go into personal hours', () => {
+  const r = schedule([task({ id: 'p', schedule: 'personal' })], [], DEFAULT_SETTINGS, MONDAY_8AM);
+  assert.equal(r.blocks[0].start, at(7, 18));
+});
+
+test('work and personal blocks never overlap', () => {
+  const s = {
+    ...DEFAULT_SETTINGS,
+    schedules: { work: DEFAULT_SETTINGS.schedules.work, personal: DEFAULT_SETTINGS.schedules.work },
+  };
+  const r = schedule(
+    [task({ id: 'w' }), task({ id: 'p', schedule: 'personal' })],
+    [],
+    s,
+    MONDAY_8AM,
+  );
+  assert.equal(r.blocks[0].start, at(7, 9));
+  assert.equal(r.blocks[1].start, at(7, 10));
+});
+
+test('time-of-day window and notAfter are respected', () => {
+  const r = schedule(
+    [
+      task({ id: 'aft', window: { startMin: 14 * 60, endMin: 16 * 60 } }),
+      task({ id: 'cut', durationMin: 600, splittable: false, notAfter: at(8, 0) } as never),
+    ],
+    [],
+    DEFAULT_SETTINGS,
+    MONDAY_8AM,
+  );
+  assert.equal(r.blocks[0].start, at(7, 14));
+  assert.equal(r.unscheduled[0].taskId, 'cut');
+});
