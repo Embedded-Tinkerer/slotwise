@@ -16,10 +16,10 @@ import { isSignedIn, signIn, signOut, type ProviderId } from './sync/auth';
 import {
   cloudConfigured,
   cloudSignOut,
-  currentEmail,
+  currentServer,
   pullRows,
   pushRows,
-  signInPassword,
+  connectServer,
 } from './sync/cloud';
 import {
   fetchGoogleEvents,
@@ -71,7 +71,8 @@ interface Persisted {
 
 export interface CloudStatus {
   configured: boolean;
-  email?: string | null;
+  /** The connected sync server, e.g. "192.168.1.20:8088". */
+  server?: string | null;
   syncing?: boolean;
   lastSync?: string;
   error?: string;
@@ -125,7 +126,7 @@ interface Store extends Persisted {
   disconnect: (p: ProviderId) => Promise<void>;
   syncAll: () => Promise<void>;
   cloudStatus: CloudStatus;
-  cloudSignIn: (email: string, password: string, create: boolean) => Promise<void>;
+  cloudSignIn: (url: string, password: string) => Promise<void>;
   cloudLogout: () => Promise<void>;
   syncCloud: () => Promise<void>;
 }
@@ -312,14 +313,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!cloudConfigured) return;
-    currentEmail()
-      .then((email) => setCloudStatus((c) => ({ ...c, email })))
+    currentServer()
+      .then((server) => setCloudStatus((c) => ({ ...c, server })))
       .catch(() => {});
   }, []);
 
   const syncCloud = useCallback(async () => {
     if (!cloudConfigured || cloudBusy.current || !loadedRef.current) return;
-    if (!(await currentEmail())) return;
+    if (!(await currentServer())) return;
     cloudBusy.current = true;
     setCloudStatus((c) => ({ ...c, syncing: true, error: undefined }));
     try {
@@ -343,11 +344,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const cloudSignIn = useCallback(
-    async (email: string, password: string, create: boolean) => {
-      const who = await signInPassword(email, password, create);
-      // A new account: start from a clean slate of sync bookkeeping.
+    async (url: string, password: string) => {
+      const server = await connectServer(url, password);
+      // A new server: start from a clean slate of sync bookkeeping.
       setState((s) => ({ ...s, cloud: { hashes: {} } }));
-      setCloudStatus((c) => ({ ...c, email: who }));
+      setCloudStatus((c) => ({ ...c, server }));
       setTimeout(() => syncCloud(), 50);
     },
     [syncCloud],
@@ -356,12 +357,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const cloudLogout = useCallback(async () => {
     await cloudSignOut();
     setState((s) => ({ ...s, cloud: { hashes: {} }, remoteCalendars: {} }));
-    setCloudStatus((c) => ({ ...c, email: null, lastSync: undefined }));
+    setCloudStatus((c) => ({ ...c, server: null, lastSync: undefined }));
   }, []);
 
   // Sync on start, every minute, when returning to the app, and shortly after edits.
   useEffect(() => {
-    if (!loaded || !cloudStatus.email) return;
+    if (!loaded || !cloudStatus.server) return;
     syncCloud();
     const id = setInterval(syncCloud, 60_000);
     const sub = AppState.addEventListener('change', (st) => st === 'active' && syncCloud());
@@ -369,15 +370,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       clearInterval(id);
       sub.remove();
     };
-  }, [loaded, cloudStatus.email, syncCloud]);
+  }, [loaded, cloudStatus.server, syncCloud]);
 
   useEffect(() => {
-    if (!loaded || !cloudStatus.email) return;
+    if (!loaded || !cloudStatus.server) return;
     const id = setTimeout(syncCloud, 3_000);
     return () => clearTimeout(id);
   }, [
     loaded,
-    cloudStatus.email,
+    cloudStatus.server,
     syncCloud,
     state.tasks,
     state.projects,

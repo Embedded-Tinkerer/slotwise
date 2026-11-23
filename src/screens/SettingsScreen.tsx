@@ -208,7 +208,8 @@ function GeminiSection() {
 function CloudSyncCard() {
   const t = useTheme();
   const { cloudStatus, cloudSignIn, cloudLogout, syncCloud } = useStore();
-  const [email, setEmail] = useState('');
+  const onWeb = Platform.OS === 'web';
+  const [url, setUrl] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -229,13 +230,9 @@ function CloudSyncCard() {
     <>
       <SectionTitle>Sync between phone and web</SectionTitle>
       <Card>
-        {!cloudStatus.configured ? (
-          <Text style={{ color: t.textMuted }}>
-            Sync isn't set up in this build yet. Follow docs/SYNC_SETUP.md in the repo, then rebuild.
-          </Text>
-        ) : cloudStatus.email ? (
+        {cloudStatus.server ? (
           <>
-            <Text style={{ color: t.text, fontWeight: '700' }}>Signed in as {cloudStatus.email}</Text>
+            <Text style={{ color: t.text, fontWeight: '700' }}>Connected to {cloudStatus.server}</Text>
             <Text style={{ color: cloudStatus.error ? t.danger : t.textMuted, fontSize: 13, marginTop: 2 }}>
               {cloudStatus.error
                 ? cloudStatus.error
@@ -247,48 +244,43 @@ function CloudSyncCard() {
             </Text>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
               <Button kind="secondary" label="Sync now" onPress={syncCloud} style={{ flex: 1 }} />
-              <Button kind="danger" label="Sign out" onPress={() => run(cloudLogout)} style={{ flex: 1 }} />
+              <Button kind="danger" label="Disconnect" onPress={() => run(cloudLogout)} style={{ flex: 1 }} />
             </View>
           </>
         ) : (
           <>
             <Text style={{ color: t.textMuted, marginBottom: 8 }}>
-              Sign in with the same email on your phone and in the browser to keep tasks, projects and habits in
-              sync. Create the account once, then use Sign in everywhere else.
+              {onWeb
+                ? 'Enter the password you set on your Slotwise server to see your phone\'s tasks and calendars here.'
+                : 'Connect to your Slotwise server to keep tasks, projects and habits in sync with the web app.'}
             </Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={[styles.input, { color: t.text, borderColor: t.border }]}
-            />
+            {!onWeb && (
+              <TextInput
+                value={url}
+                onChangeText={setUrl}
+                placeholder="Server address, e.g. http://192.168.1.20:8088"
+                placeholderTextColor={t.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                style={[styles.input, { color: t.text, borderColor: t.border, marginBottom: 8 }]}
+              />
+            )}
             <TextInput
               value={password}
               onChangeText={setPassword}
-              placeholder="Password (at least 6 characters)"
+              placeholder="Password"
               placeholderTextColor={t.textMuted}
               autoCapitalize="none"
               secureTextEntry
-              style={[styles.input, { color: t.text, borderColor: t.border, marginTop: 8 }]}
+              style={[styles.input, { color: t.text, borderColor: t.border }]}
             />
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-              <Button
-                label={busy ? 'Please wait…' : 'Sign in'}
-                disabled={busy || !email.includes('@') || password.length < 6}
-                onPress={() => run(() => cloudSignIn(email, password, false))}
-                style={{ flex: 1 }}
-              />
-              <Button
-                kind="secondary"
-                label="Create account"
-                disabled={busy || !email.includes('@') || password.length < 6}
-                onPress={() => run(() => cloudSignIn(email, password, true))}
-                style={{ flex: 1 }}
-              />
-            </View>
+            <Button
+              label={busy ? 'Connecting…' : 'Connect'}
+              disabled={busy || !password || (!onWeb && !url.trim())}
+              onPress={() => run(() => cloudSignIn(url, password))}
+              style={{ marginTop: 10 }}
+            />
           </>
         )}
         {err && <Text style={{ color: t.danger, marginTop: 8, fontSize: 13 }}>{err}</Text>}

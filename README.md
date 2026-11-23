@@ -74,4 +74,4 @@ npx expo run:android
 
 ## Web app and sync
 
-The same app runs in a browser and syncs with the phone through Supabase. A Docker image (`ghcr.io/embedded-tinkerer/slotwise-web`) is built on every push for self-hosting. See [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).
+The same app runs in a browser and syncs with the phone through a small self-hosted server (`server/server.mjs`). The Docker image `ghcr.io/embedded-tinkerer/slotwise` serves both the web app and the sync API. See [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).

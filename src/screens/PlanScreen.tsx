@@ -109,12 +109,11 @@ export default function PlanScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      {Platform.OS === 'web' && !store.cloudStatus.email && (
+      {Platform.OS === 'web' && !store.cloudStatus.server && (
         <View style={[styles.banner, { backgroundColor: t.surfaceAlt }]}>
           <Text style={{ color: t.text, fontSize: 13 }}>
-            {store.cloudStatus.configured
-              ? 'Sign in under Settings → "Sync between phone and web" to see your phone\'s tasks and calendars here.'
-              : 'Sync is not set up in this build, so changes stay in this browser.'}
+            Enter your Slotwise password under Settings → "Sync between phone and web" to see your phone's tasks and
+            calendars here.
           </Text>
         </View>
       )}

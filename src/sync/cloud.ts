@@ -1,93 +1,99 @@
-// Supabase client for syncing between the phone and the web app.
-// Sign-in is by email and password; data lives in one "items"
-// table protected by row level security (see supabase/schema.sql).
+// Sync with your own Slotwise server (server/server.mjs, run in Docker).
+// The phone stores the server address and password; the web app is served by
+// that same server, so it only needs the password.
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
 import type { Row } from '../cloudMerge';
+import * as SecureStore from '../secureStore';
 
-const URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const KEY = 'slotwise_sync_server';
 
-export const cloudConfigured = !!URL && !!ANON_KEY;
+interface ServerConfig {
+  url: string;
+  password: string;
+}
 
-let client: SupabaseClient | null = null;
+/** Sync needs no build-time setup any more; it is configured in the app. */
+export const cloudConfigured = true;
 
-export function supabase(): SupabaseClient {
-  if (!cloudConfigured) throw new Error('Sync is not set up in this build. See docs/SYNC_SETUP.md.');
-  if (!client) {
-    client = createClient(URL, ANON_KEY, {
-      auth: { storage: AsyncStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+/** On the web the app is served by the sync server itself. */
+export const webOrigin = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin : '';
+
+let cached: ServerConfig | null | undefined;
+
+async function config(): Promise<ServerConfig | null> {
+  if (cached !== undefined) return cached;
+  const raw = await SecureStore.getItem(KEY);
+  cached = raw ? (JSON.parse(raw) as ServerConfig) : null;
+  return cached;
+}
+
+function normalizeUrl(input: string): string {
+  let u = input.trim().replace(/\/+$/, '');
+  if (!u) return webOrigin;
+  if (!/^https?:\/\//i.test(u)) u = `http://${u}`;
+  return u;
+}
+
+/** A short label for the connected server, or null when not connected. */
+export async function currentServer(): Promise<string | null> {
+  const c = await config();
+  if (!c) return null;
+  return c.url.replace(/^https?:\/\//, '');
+}
+
+async function call(c: ServerConfig, path: string, init: RequestInit = {}): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(`${c.url}${path}`, {
+      ...init,
+      headers: { ...(init.headers ?? {}), Authorization: `Bearer ${c.password}` },
     });
+  } catch {
+    throw new Error(`Can't reach ${c.url}. Check the address and that you're on the right network.`);
   }
-  return client;
+  if (res.status === 401) throw new Error('Wrong password for the Slotwise server');
+  if (!res.ok) throw new Error(`Slotwise server error ${res.status}`);
+  return res;
 }
 
-export async function currentEmail(): Promise<string | null> {
-  if (!cloudConfigured) return null;
-  const { data } = await supabase().auth.getSession();
-  return data.session?.user.email ?? null;
-}
-
-/** Signs in with email and password, or creates the account first. */
-export async function signInPassword(email: string, password: string, create: boolean): Promise<string> {
-  const auth = supabase().auth;
-  const creds = { email: email.trim(), password };
-  if (create) {
-    const { data, error } = await auth.signUp(creds);
-    if (error) throw error;
-    if (!data.session) {
-      throw new Error(
-        'Account created, but Supabase wants the email confirmed first. Turn off "Confirm email" in Supabase (Authentication → Sign In / Providers → Email), then press Sign in.',
-      );
-    }
-    return data.user?.email ?? email;
-  }
-  const { data, error } = await auth.signInWithPassword(creds);
-  if (error) throw error;
-  return data.user?.email ?? email;
+/** Checks the address and password, then remembers them. */
+export async function connectServer(url: string, password: string): Promise<string> {
+  const c = { url: normalizeUrl(url), password };
+  if (!c.url) throw new Error('Enter your server address, like http://192.168.1.20:8088');
+  await call(c, '/api/ping');
+  await SecureStore.setItem(KEY, JSON.stringify(c));
+  cached = c;
+  return c.url.replace(/^https?:\/\//, '');
 }
 
 export async function cloudSignOut(): Promise<void> {
-  await supabase().auth.signOut();
+  await SecureStore.deleteItem(KEY);
+  cached = null;
 }
 
-const PAGE = 1000;
+async function need(): Promise<ServerConfig> {
+  const c = await config();
+  if (!c) throw new Error('Not connected to a Slotwise server');
+  return c;
+}
 
-/** Rows changed since `since` (with a small overlap for clock races). */
+/** Rows changed since `since` (a server timestamp from an earlier pull). */
 export async function pullRows(since?: string): Promise<Row[]> {
-  const from = since ? new Date(Date.parse(since) - 5_000).toISOString() : undefined;
-  const out: Row[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    let q = supabase()
-      .from('items')
-      .select('kind,id,data,deleted,updated_at')
-      .order('updated_at', { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (from) q = q.gt('updated_at', from);
-    const { data, error } = await q;
-    if (error) throw error;
-    out.push(...((data ?? []) as Row[]));
-    if (!data || data.length < PAGE) break;
-  }
-  return out;
+  const q = since ? `?since=${encodeURIComponent(since)}` : '';
+  const res = await call(await need(), `/api/items${q}`);
+  return ((await res.json()) as { rows: Row[] }).rows;
 }
 
 export async function pushRows(rows: Row[]): Promise<void> {
   if (!rows.length) return;
-  const { data: auth } = await supabase().auth.getUser();
-  const uid = auth.user?.id;
-  if (!uid) throw new Error('Not signed in to sync');
-  for (let i = 0; i < rows.length; i += 200) {
-    const batch = rows.slice(i, i + 200).map((r) => ({
-      user_id: uid,
-      kind: r.kind,
-      id: r.id,
-      data: r.deleted ? null : r.data,
-      deleted: !!r.deleted,
-    }));
-    const { error } = await supabase().from('items').upsert(batch, { onConflict: 'user_id,kind,id' });
-    if (error) throw error;
+  const c = await need();
+  for (let i = 0; i < rows.length; i += 500) {
+    await call(c, '/api/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: rows.slice(i, i + 500) }),
+    });
   }
 }

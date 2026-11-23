@@ -1,16 +1,17 @@
-# Slotwise web app: a static build served by nginx.
+# Slotwise server: the web app plus the sync API, in one small container.
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-ARG EXPO_PUBLIC_SUPABASE_URL=""
-ARG EXPO_PUBLIC_SUPABASE_ANON_KEY=""
-ENV EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL \
-    EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY
 RUN npx expo export -p web --output-dir dist
 
-FROM nginx:1.27-alpine
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
+FROM node:22-alpine
+WORKDIR /app
+COPY server/server.mjs server/server.mjs
+COPY --from=build /app/dist dist
+ENV PORT=8080 DATA_DIR=/data NODE_ENV=production
+VOLUME /data
+EXPOSE 8080
+USER node
+CMD ["node", "server/server.mjs"]
