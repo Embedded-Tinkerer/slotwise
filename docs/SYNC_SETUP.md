@@ -15,23 +15,27 @@ writing blocks back to your calendars, and reminders.
    is plenty). Pick any name and a region near you.
 2. Open **SQL Editor → New query**, paste the contents of
    [`supabase/schema.sql`](../supabase/schema.sql), and press **Run**.
-3. Open **Authentication → Emails → Templates → Magic Link** and replace the
-   body with something that includes the code, for example:
+3. Supabase only lets you edit email templates once you use your own email
+   sender, so set that up first. With Gmail: turn on 2-Step Verification in
+   your Google account, then create an app password at
+   <https://myaccount.google.com/apppasswords>. In Supabase open
+   **Authentication → Emails → SMTP Settings**, turn on custom SMTP and enter
+   host `smtp.gmail.com`, port `465`, your Gmail address as username and
+   sender email, sender name `Slotwise`, and the app password.
+
+   Then open **Templates → Magic link or OTP** and set the body to something
+   that includes the code, for example:
 
    ```html
    <h2>Your Slotwise code</h2>
    <p>Enter this code in Slotwise: <strong>{{ .Token }}</strong></p>
    ```
 
-   Do the same for the **Confirm signup** template. Without `{{ .Token }}`
-   the email only has a link, and Slotwise signs in with the 6 digit code.
+   Do the same for **Confirm sign up**. Without `{{ .Token }}` the email only
+   has a link, and Slotwise signs in with the 6 digit code.
 4. Open **Project Settings → API** (or **Connect**) and copy the
    **Project URL** and the **anon / publishable key**. The anon key is safe
    to ship in the app; row level security keeps your data private.
-
-The free tier's built in email sender is limited to a few emails an hour.
-That is fine for signing in a couple of devices. If you hit the limit, add
-your own SMTP server under **Authentication → Emails → SMTP settings**.
 
 ## 2. Add the GitHub secrets
 
