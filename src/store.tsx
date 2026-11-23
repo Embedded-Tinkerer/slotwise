@@ -19,8 +19,7 @@ import {
   currentEmail,
   pullRows,
   pushRows,
-  sendCode,
-  verifyCode,
+  signInPassword,
 } from './sync/cloud';
 import {
   fetchGoogleEvents,
@@ -126,8 +125,7 @@ interface Store extends Persisted {
   disconnect: (p: ProviderId) => Promise<void>;
   syncAll: () => Promise<void>;
   cloudStatus: CloudStatus;
-  cloudSendCode: (email: string) => Promise<void>;
-  cloudVerify: (email: string, code: string) => Promise<void>;
+  cloudSignIn: (email: string, password: string, create: boolean) => Promise<void>;
   cloudLogout: () => Promise<void>;
   syncCloud: () => Promise<void>;
 }
@@ -344,13 +342,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const cloudSendCode = useCallback(async (email: string) => {
-    await sendCode(email);
-  }, []);
-
-  const cloudVerify = useCallback(
-    async (email: string, code: string) => {
-      const who = await verifyCode(email, code);
+  const cloudSignIn = useCallback(
+    async (email: string, password: string, create: boolean) => {
+      const who = await signInPassword(email, password, create);
       // A new account: start from a clean slate of sync bookkeeping.
       setState((s) => ({ ...s, cloud: { hashes: {} } }));
       setCloudStatus((c) => ({ ...c, email: who }));
@@ -712,8 +706,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     disconnect,
     syncAll,
     cloudStatus,
-    cloudSendCode,
-    cloudVerify,
+    cloudSignIn,
     cloudLogout,
     syncCloud,
   };

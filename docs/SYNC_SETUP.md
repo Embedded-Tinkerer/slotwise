@@ -15,24 +15,9 @@ writing blocks back to your calendars, and reminders.
    is plenty). Pick any name and a region near you.
 2. Open **SQL Editor → New query**, paste the contents of
    [`supabase/schema.sql`](../supabase/schema.sql), and press **Run**.
-3. Supabase only lets you edit email templates once you use your own email
-   sender, so set that up first. With Gmail: turn on 2-Step Verification in
-   your Google account, then create an app password at
-   <https://myaccount.google.com/apppasswords>. In Supabase open
-   **Authentication → Emails → SMTP Settings**, turn on custom SMTP and enter
-   host `smtp.gmail.com`, port `465`, your Gmail address as username and
-   sender email, sender name `Slotwise`, and the app password.
-
-   Then open **Templates → Magic link or OTP** and set the body to something
-   that includes the code, for example:
-
-   ```html
-   <h2>Your Slotwise code</h2>
-   <p>Enter this code in Slotwise: <strong>{{ .Token }}</strong></p>
-   ```
-
-   Do the same for **Confirm sign up**. Without `{{ .Token }}` the email only
-   has a link, and Slotwise signs in with the 6 digit code.
+3. Open **Authentication → Sign In / Providers → Email** and turn **off**
+   "Confirm email", then save. Slotwise signs in with an email and password,
+   so Supabase never needs to send you an email.
 4. Open **Project Settings → API** (or **Connect**) and copy the
    **Project URL** and the **anon / publishable key**. The anon key is safe
    to ship in the app; row level security keeps your data private.
@@ -82,9 +67,14 @@ let a tool like Watchtower pull `:latest` for you.
 
 ## 4. Sign in
 
-On the phone and in the browser: **Settings → Sync between phone and web**,
-enter your email, press **Email me a code**, and type the 6 digit code. Sign
-in on the phone first so the web app starts with your existing tasks.
+On the phone or in the browser, open **Settings → Sync between phone and web**,
+enter your email and a password, and press **Create account** once. Everywhere
+else, use the same email and password with **Sign in**. Sign in on the phone
+first so the web app starts with your existing tasks.
+
+Once your account exists, you can turn off **Allow new users to sign up**
+(Authentication → Sign In / Providers) so nobody else can make an account on
+your Supabase project.
 
 ## Running it locally
 

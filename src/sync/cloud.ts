@@ -1,5 +1,5 @@
 // Supabase client for syncing between the phone and the web app.
-// Sign-in is by a 6-digit code sent by email; data lives in one "items"
+// Sign-in is by email and password; data lives in one "items"
 // table protected by row level security (see supabase/schema.sql).
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,13 +30,21 @@ export async function currentEmail(): Promise<string | null> {
   return data.session?.user.email ?? null;
 }
 
-export async function sendCode(email: string): Promise<void> {
-  const { error } = await supabase().auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: true } });
-  if (error) throw error;
-}
-
-export async function verifyCode(email: string, code: string): Promise<string> {
-  const { data, error } = await supabase().auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' });
+/** Signs in with email and password, or creates the account first. */
+export async function signInPassword(email: string, password: string, create: boolean): Promise<string> {
+  const auth = supabase().auth;
+  const creds = { email: email.trim(), password };
+  if (create) {
+    const { data, error } = await auth.signUp(creds);
+    if (error) throw error;
+    if (!data.session) {
+      throw new Error(
+        'Account created, but Supabase wants the email confirmed first. Turn off "Confirm email" in Supabase (Authentication → Sign In / Providers → Email), then press Sign in.',
+      );
+    }
+    return data.user?.email ?? email;
+  }
+  const { data, error } = await auth.signInWithPassword(creds);
   if (error) throw error;
   return data.user?.email ?? email;
 }

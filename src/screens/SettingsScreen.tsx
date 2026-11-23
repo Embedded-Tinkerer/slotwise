@@ -207,10 +207,9 @@ function GeminiSection() {
 
 function CloudSyncCard() {
   const t = useTheme();
-  const { cloudStatus, cloudSendCode, cloudVerify, cloudLogout, syncCloud } = useStore();
+  const { cloudStatus, cloudSignIn, cloudLogout, syncCloud } = useStore();
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -255,7 +254,7 @@ function CloudSyncCard() {
           <>
             <Text style={{ color: t.textMuted, marginBottom: 8 }}>
               Sign in with the same email on your phone and in the browser to keep tasks, projects and habits in
-              sync. We'll email you a 6-digit code.
+              sync. Create the account once, then use Sign in everywhere else.
             </Text>
             <TextInput
               value={email}
@@ -266,36 +265,30 @@ function CloudSyncCard() {
               keyboardType="email-address"
               style={[styles.input, { color: t.text, borderColor: t.border }]}
             />
-            {sent && (
-              <TextInput
-                value={code}
-                onChangeText={setCode}
-                placeholder="6-digit code"
-                placeholderTextColor={t.textMuted}
-                keyboardType="number-pad"
-                style={[styles.input, { color: t.text, borderColor: t.border, marginTop: 8 }]}
-              />
-            )}
-            <Button
-              label={busy ? 'Please wait…' : sent ? 'Sign in' : 'Email me a code'}
-              disabled={busy || !email.includes('@') || (sent && code.trim().length < 6)}
-              onPress={() =>
-                run(async () => {
-                  if (!sent) {
-                    await cloudSendCode(email);
-                    setSent(true);
-                  } else {
-                    await cloudVerify(email, code);
-                  }
-                })
-              }
-              style={{ marginTop: 10 }}
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password (at least 6 characters)"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              secureTextEntry
+              style={[styles.input, { color: t.text, borderColor: t.border, marginTop: 8 }]}
             />
-            {sent && (
-              <Pressable onPress={() => run(() => cloudSendCode(email))}>
-                <Text style={{ color: t.accent, marginTop: 8, fontWeight: '600' }}>Send a new code</Text>
-              </Pressable>
-            )}
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <Button
+                label={busy ? 'Please wait…' : 'Sign in'}
+                disabled={busy || !email.includes('@') || password.length < 6}
+                onPress={() => run(() => cloudSignIn(email, password, false))}
+                style={{ flex: 1 }}
+              />
+              <Button
+                kind="secondary"
+                label="Create account"
+                disabled={busy || !email.includes('@') || password.length < 6}
+                onPress={() => run(() => cloudSignIn(email, password, true))}
+                style={{ flex: 1 }}
+              />
+            </View>
           </>
         )}
         {err && <Text style={{ color: t.danger, marginTop: 8, fontSize: 13 }}>{err}</Text>}
