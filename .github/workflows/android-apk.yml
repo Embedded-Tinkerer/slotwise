@@ -21,6 +21,8 @@ jobs:
       EXPO_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       EXPO_PUBLIC_MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
       EXPO_PUBLIC_MS_TENANT: ${{ secrets.MS_TENANT }}
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5

@@ -31,7 +31,8 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('plan');
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['top', 'bottom']}>
+    <View style={{ flex: 1, backgroundColor: t.bg, alignItems: 'center' }}>
+    <SafeAreaView style={{ flex: 1, width: '100%', maxWidth: 900, backgroundColor: t.bg }} edges={['top', 'bottom']}>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       <View style={styles.header}>
         <Text style={[styles.brand, { color: t.accent }]}>Slotwise</Text>
@@ -68,6 +69,7 @@ function Shell() {
         })}
       </View>
     </SafeAreaView>
+    </View>
   );
 }
 

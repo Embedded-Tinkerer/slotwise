@@ -10,7 +10,7 @@ const CHANNEL = 'blocks';
 const LOOKAHEAD_MS = 36 * 3600_000;
 const MAX_SCHEDULED = 40;
 
-Notifications.setNotificationHandler({
+if (Platform.OS !== 'web') Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
@@ -31,6 +31,7 @@ async function ensureChannel() {
 }
 
 export async function ensurePermission(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
   if (!current.canAskAgain) return false;

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { confirmAction } from '../confirm';
 import { DateTimeField } from '../components/DateTimeField';
 import { Button, Card, Chip, Label, SectionTitle } from '../components/ui';
 import { fmtDateTime, fmtDuration } from '../format';
@@ -52,17 +53,15 @@ function ProjectEditor({ project, onClose }: { project?: Project; onClose: (save
   const remove = () => {
     if (!project) return;
     const open = tasks.filter((x) => x.projectId === project.id && !x.completed).length;
-    Alert.alert('Delete project?', open ? `This also deletes its ${open} open task${open > 1 ? 's' : ''}.` : project.name, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          deleteProject(project.id);
-          onClose();
-        },
+    confirmAction(
+      'Delete project?',
+      open ? `This also deletes its ${open} open task${open > 1 ? 's' : ''}.` : project.name,
+      'Delete',
+      () => {
+        deleteProject(project.id);
+        onClose();
       },
-    ]);
+    );
   };
 
   return (

@@ -10,7 +10,7 @@ import {
   revokeAsync,
   type DiscoveryDocument,
 } from 'expo-auth-session';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../secureStore';
 import * as WebBrowser from 'expo-web-browser';
 
 import {
@@ -88,11 +88,11 @@ async function save(id: ProviderId, t: TokenResponse | StoredToken): Promise<voi
     expiresIn: t.expiresIn,
     issuedAt: t.issuedAt,
   };
-  await SecureStore.setItemAsync(key(id), JSON.stringify(stored));
+  await SecureStore.setItem(key(id), JSON.stringify(stored));
 }
 
 async function load(id: ProviderId): Promise<StoredToken | null> {
-  const raw = await SecureStore.getItemAsync(key(id));
+  const raw = await SecureStore.getItem(key(id));
   return raw ? (JSON.parse(raw) as StoredToken) : null;
 }
 
@@ -135,7 +135,7 @@ export async function signIn(id: ProviderId): Promise<boolean> {
 
 export async function signOut(id: ProviderId): Promise<void> {
   const t = await load(id);
-  await SecureStore.deleteItemAsync(key(id));
+  await SecureStore.deleteItem(key(id));
   const cfg = providerConfig(id);
   if (t && cfg.discovery.revocationEndpoint) {
     try {

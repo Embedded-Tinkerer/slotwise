@@ -3,6 +3,7 @@
 
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
+import { Platform } from 'react-native';
 
 import { attachmentMime } from './attachmentTypes';
 
@@ -40,9 +41,18 @@ export async function pickAttachments(current: Attachment[]): Promise<{ added: A
       skipped.push(`${asset.name} (attachments are limited to 15 MB in total)`);
       continue;
     }
-    const data = await new File(asset.uri).base64();
+    const data = await readBase64(asset);
     total += size || Math.round((data.length * 3) / 4);
     added.push({ name: asset.name, mimeType: mime, size: size || Math.round((data.length * 3) / 4), data });
   }
   return { added, skipped: skipped.length ? `Skipped: ${skipped.join('; ')}` : undefined };
+}
+
+async function readBase64(asset: DocumentPicker.DocumentPickerAsset): Promise<string> {
+  if (Platform.OS !== 'web') return new File(asset.uri).base64();
+  const blob: Blob = asset.file ?? (await (await fetch(asset.uri)).blob());
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(bin);
 }

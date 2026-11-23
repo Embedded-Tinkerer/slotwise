@@ -1,7 +1,7 @@
 // Gemini client. The API key is pasted in by the user and kept in the
 // phone's secure storage; requests go straight from the phone to Google.
 
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../secureStore';
 
 import type { Attachment } from './attachments';
 import { RESPONSE_SCHEMA, buildPrompt, toDrafts, type Draft } from './parse';
@@ -18,12 +18,12 @@ export const DEFAULT_GEMINI_MODEL = 'gemini-flash-latest';
 export const GEMINI_KEY_URL = 'https://aistudio.google.com/apikey';
 
 export async function getGeminiKey(): Promise<string | null> {
-  return SecureStore.getItemAsync(KEY);
+  return SecureStore.getItem(KEY);
 }
 
 export async function setGeminiKey(key: string | null): Promise<void> {
-  if (key && key.trim()) await SecureStore.setItemAsync(KEY, key.trim());
-  else await SecureStore.deleteItemAsync(KEY);
+  if (key && key.trim()) await SecureStore.setItem(KEY, key.trim());
+  else await SecureStore.deleteItem(KEY);
 }
 
 /** Calls Gemini with a JSON response schema and returns the parsed JSON. */

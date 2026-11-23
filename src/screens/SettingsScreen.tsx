@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { DEFAULT_GEMINI_MODEL, getGeminiKey, setGeminiKey } from '../ai/gemini';
+import { confirmAction, notify } from '../confirm';
 import { DateTimeField } from '../components/DateTimeField';
 import { GeminiKeyForm } from './AIComposer';
 import { Button, Card, Chip, Label, SectionTitle } from '../components/ui';
@@ -23,8 +24,27 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function ConnectionCard({ id, name, hint }: { id: ProviderId; name: string; hint: string }) {
   const t = useTheme();
   const { connections, connect, disconnect, syncAll, synced, settings, updateSettings } = useStore();
+  const { remoteCalendars } = useStore();
   const c = connections[id];
   const configured = isConfigured(id);
+  if (Platform.OS === 'web') {
+    const r = remoteCalendars[id];
+    return (
+      <Card>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={[styles.dot, { backgroundColor: SOURCE_COLORS[id] }]} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontWeight: '700', fontSize: 16 }}>{name}</Text>
+            <Text style={{ color: t.textMuted, fontSize: 13 }}>
+              {r?.account
+                ? `${r.account} · from your phone${r.lastSync ? `, updated ${fmtDateTime(r.lastSync)}` : ''} · ${synced[id].length} events`
+                : 'Connect it in the phone app; its events show up here through sync.'}
+            </Text>
+          </View>
+        </View>
+      </Card>
+    );
+  }
   return (
     <Card>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -111,12 +131,7 @@ function PersonalBlocks() {
             </Text>
           </View>
           <Pressable
-            onPress={() =>
-              Alert.alert('Remove block?', e.title, [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Remove', style: 'destructive', onPress: () => deleteEvent(e.id) },
-              ])
-            }
+            onPress={() => confirmAction('Remove block?', e.title, 'Remove', () => deleteEvent(e.id))}
             hitSlop={10}
           >
             <Text style={{ color: t.danger, fontWeight: '600' }}>Remove</Text>
@@ -190,6 +205,105 @@ function GeminiSection() {
   );
 }
 
+function CloudSyncCard() {
+  const t = useTheme();
+  const { cloudStatus, cloudSendCode, cloudVerify, cloudLogout, syncCloud } = useStore();
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async (f: () => Promise<void>) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await f();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <SectionTitle>Sync between phone and web</SectionTitle>
+      <Card>
+        {!cloudStatus.configured ? (
+          <Text style={{ color: t.textMuted }}>
+            Sync isn't set up in this build yet. Follow docs/SYNC_SETUP.md in the repo, then rebuild.
+          </Text>
+        ) : cloudStatus.email ? (
+          <>
+            <Text style={{ color: t.text, fontWeight: '700' }}>Signed in as {cloudStatus.email}</Text>
+            <Text style={{ color: cloudStatus.error ? t.danger : t.textMuted, fontSize: 13, marginTop: 2 }}>
+              {cloudStatus.error
+                ? cloudStatus.error
+                : cloudStatus.syncing
+                  ? 'Syncing…'
+                  : cloudStatus.lastSync
+                    ? `Synced ${fmtTime(cloudStatus.lastSync)}`
+                    : 'Waiting to sync'}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <Button kind="secondary" label="Sync now" onPress={syncCloud} style={{ flex: 1 }} />
+              <Button kind="danger" label="Sign out" onPress={() => run(cloudLogout)} style={{ flex: 1 }} />
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={{ color: t.textMuted, marginBottom: 8 }}>
+              Sign in with the same email on your phone and in the browser to keep tasks, projects and habits in
+              sync. We'll email you a 6-digit code.
+            </Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={[styles.input, { color: t.text, borderColor: t.border }]}
+            />
+            {sent && (
+              <TextInput
+                value={code}
+                onChangeText={setCode}
+                placeholder="6-digit code"
+                placeholderTextColor={t.textMuted}
+                keyboardType="number-pad"
+                style={[styles.input, { color: t.text, borderColor: t.border, marginTop: 8 }]}
+              />
+            )}
+            <Button
+              label={busy ? 'Please wait…' : sent ? 'Sign in' : 'Email me a code'}
+              disabled={busy || !email.includes('@') || (sent && code.trim().length < 6)}
+              onPress={() =>
+                run(async () => {
+                  if (!sent) {
+                    await cloudSendCode(email);
+                    setSent(true);
+                  } else {
+                    await cloudVerify(email, code);
+                  }
+                })
+              }
+              style={{ marginTop: 10 }}
+            />
+            {sent && (
+              <Pressable onPress={() => run(() => cloudSendCode(email))}>
+                <Text style={{ color: t.accent, marginTop: 8, fontWeight: '600' }}>Send a new code</Text>
+              </Pressable>
+            )}
+          </>
+        )}
+        {err && <Text style={{ color: t.danger, marginTop: 8, fontSize: 13 }}>{err}</Text>}
+      </Card>
+    </>
+  );
+}
+
 export default function SettingsScreen() {
   const t = useTheme();
   const { settings, updateSettings, connections } = useStore();
@@ -203,7 +317,7 @@ export default function SettingsScreen() {
 
   const enableReminders = async (m: number) => {
     if (m >= 0 && !(await ensurePermission())) {
-      Alert.alert('Notifications are off', 'Allow notifications for Slotwise in Android settings to get reminders.');
+      notify('Notifications are off', 'Allow notifications for Slotwise in Android settings to get reminders.');
       return;
     }
     updateSettings({ notifyMin: m });
@@ -211,10 +325,14 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
+      <CloudSyncCard />
+
       <SectionTitle>Calendars</SectionTitle>
       <ConnectionCard id="google" name="Google Calendar" hint="Personal calendar" />
       <ConnectionCard id="microsoft" name="Outlook" hint="Work calendar (Microsoft 365)" />
 
+      {Platform.OS !== 'web' && (
+      <>
       <SectionTitle>Show planned tasks on my calendars</SectionTitle>
       <Text style={{ color: t.textMuted, marginBottom: 8 }}>
         Adds task blocks for the next 7 days to a separate "Slotwise" calendar so others see you as busy.
@@ -244,6 +362,8 @@ export default function SettingsScreen() {
       {((settings.writeGoogle !== 'off' && !connections.google?.account) ||
         (settings.writeOutlook !== 'off' && !connections.microsoft?.account)) && (
         <Text style={{ color: t.warn, fontSize: 13 }}>Connect that calendar above for this to take effect.</Text>
+      )}
+      </>
       )}
 
       <SectionTitle>Hours</SectionTitle>
@@ -296,8 +416,8 @@ export default function SettingsScreen() {
           />
         ))}
       </View>
-      <Label>Remind me before a task block starts</Label>
-      <View style={styles.wrap}>
+      {Platform.OS !== 'web' && <Label>Remind me before a task block starts</Label>}
+      <View style={[styles.wrap, Platform.OS === 'web' && { display: 'none' }]}>
         {[-1, 0, 5, 10, 15].map((m) => (
           <Chip
             key={m}

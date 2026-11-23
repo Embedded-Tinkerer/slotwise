@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BlockSheet, type SheetTarget } from '../components/BlockSheet';
 import { Timeline, type TimelineItem } from '../components/Timeline';
@@ -109,6 +109,15 @@ export default function PlanScreen() {
 
   return (
     <View style={{ flex: 1 }}>
+      {Platform.OS === 'web' && !store.cloudStatus.email && (
+        <View style={[styles.banner, { backgroundColor: t.surfaceAlt }]}>
+          <Text style={{ color: t.text, fontSize: 13 }}>
+            {store.cloudStatus.configured
+              ? 'Sign in under Settings → "Sync between phone and web" to see your phone\'s tasks and calendars here.'
+              : 'Sync is not set up in this build, so changes stay in this browser.'}
+          </Text>
+        </View>
+      )}
       {/* Mode switch and navigation */}
       <View style={styles.toolbar}>
         <View style={[styles.segment, { backgroundColor: t.surfaceAlt }]}>
@@ -288,6 +297,7 @@ export default function PlanScreen() {
 }
 
 const styles = StyleSheet.create({
+  banner: { marginHorizontal: 12, marginTop: 6, padding: 10, borderRadius: 10 },
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 6 },
   segment: { flexDirection: 'row', borderRadius: 10, padding: 3 },
   segBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },

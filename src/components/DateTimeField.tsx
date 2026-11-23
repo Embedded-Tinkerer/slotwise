@@ -1,6 +1,8 @@
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import React from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, TextInput, View } from 'react-native';
+
+import { useTheme } from '../theme';
 
 import { addDays, fmtDateTime, startOfDay } from '../format';
 import { Chip } from './ui';
@@ -32,6 +34,7 @@ export function DateTimeField({
     { label: 'Next week', iso: at(addDays(today, 7), defaultHour) },
   ];
   const matched = quick.find((q) => q.iso === value);
+  const t = useTheme();
 
   const pickCustom = () => {
     if (Platform.OS !== 'android') return;
@@ -66,6 +69,33 @@ export function DateTimeField({
           onPress={pickCustom}
         />
       )}
+      {Platform.OS === 'web' && (
+        <TextInput
+          // Renders as a native browser date-time input.
+          {...({ type: 'datetime-local' } as object)}
+          value={value ? toLocalInput(value) : ''}
+          onChangeText={(v) => {
+            if (!v) return;
+            const d = new Date(v);
+            if (!Number.isNaN(d.getTime())) onChange(d.toISOString());
+          }}
+          style={{
+            borderWidth: 1,
+            borderColor: t.border,
+            color: t.text,
+            borderRadius: 8,
+            paddingHorizontal: 8,
+            paddingVertical: 6,
+            marginTop: 4,
+          }}
+        />
+      )}
     </View>
   );
+}
+
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }

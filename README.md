@@ -71,3 +71,7 @@ npx expo run:android
 | `src/ai/` | Gemini prompt, schema and response validation |
 | `src/screens/` | Plan, Tasks, task editor, Calendars & hours |
 | `.github/workflows/android-apk.yml` | APK build and release |
+
+## Web app and sync
+
+The same app runs in a browser and syncs with the phone through Supabase. A Docker image (`ghcr.io/embedded-tinkerer/slotwise-web`) is built on every push for self-hosting. See [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).

@@ -30,7 +30,8 @@ export function mergeGoogleTasks(
   tasks: Task[],
   remote: GoogleTaskItem[],
   ignored: string[],
-  newId: () => string,
+  /** Id for a newly imported task (deterministic, so every device agrees). */
+  newId: (remoteId: string) => string,
   nowIso: string,
 ): Task[] {
   const byRemoteId = new Map(remote.map((r) => [r.id, r]));
@@ -53,7 +54,7 @@ export function mergeGoogleTasks(
   for (const r of remote) {
     if (seen.has(r.id) || ignored.includes(r.id)) continue;
     merged.push({
-      id: newId(),
+      id: newId(r.id),
       title: r.title,
       notes: r.notes,
       durationMin: DEFAULT_IMPORT_MIN,

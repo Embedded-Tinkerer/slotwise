@@ -4,14 +4,24 @@
 // open. Side effects (calendar write-back, reminders) follow the plan.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
+import { uuid } from './uuid';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
+import { applyRows, diffForPush, markPushed, type CloudMeta, type RemoteCalendar } from './cloudMerge';
 import { syncReminders } from './notify';
 import { buildSchedTasks, parseRecurringId } from './plan';
 import { schedule, type SchedTask } from './scheduler';
 import { isSignedIn, signIn, signOut, type ProviderId } from './sync/auth';
+import {
+  cloudConfigured,
+  cloudSignOut,
+  currentEmail,
+  pullRows,
+  pushRows,
+  sendCode,
+  verifyCode,
+} from './sync/cloud';
 import {
   fetchGoogleEvents,
   fetchMicrosoftEvents,
@@ -56,6 +66,16 @@ interface Persisted {
   /** Google Tasks ids the user deleted here, so they are not re-imported. */
   ignoredGoogleTasks: string[];
   writeBack: Record<ProviderId, WriteBackState>;
+  cloud: CloudMeta;
+  remoteCalendars: Partial<Record<ProviderId, RemoteCalendar>>;
+}
+
+export interface CloudStatus {
+  configured: boolean;
+  email?: string | null;
+  syncing?: boolean;
+  lastSync?: string;
+  error?: string;
 }
 
 const STORAGE_KEY = 'slotwise_state_v1';
@@ -72,6 +92,8 @@ const EMPTY: Persisted = {
   connections: {},
   ignoredGoogleTasks: [],
   writeBack: { google: { events: {} }, microsoft: { events: {} } },
+  cloud: { hashes: {} },
+  remoteCalendars: {},
 };
 
 type NewTask = Partial<Task> & Pick<Task, 'title' | 'durationMin' | 'priority'>;
@@ -103,6 +125,11 @@ interface Store extends Persisted {
   connect: (p: ProviderId) => Promise<void>;
   disconnect: (p: ProviderId) => Promise<void>;
   syncAll: () => Promise<void>;
+  cloudStatus: CloudStatus;
+  cloudSendCode: (email: string) => Promise<void>;
+  cloudVerify: (email: string, code: string) => Promise<void>;
+  cloudLogout: () => Promise<void>;
+  syncCloud: () => Promise<void>;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -135,6 +162,8 @@ function migrate(saved: Partial<Persisted> & { settings?: Partial<Settings> & { 
     ignoredGoogleTasks: saved.ignoredGoogleTasks ?? [],
     projects: saved.projects ?? [],
     rules: saved.rules ?? [],
+    cloud: saved.cloud ?? { hashes: {} },
+    remoteCalendars: saved.remoteCalendars ?? {},
   };
 }
 
@@ -144,6 +173,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [now, setNow] = useState(Date.now());
   const stateRef = useRef(state);
   stateRef.current = state;
+  const loadedRef = useRef(false);
+  loadedRef.current = loaded;
 
   // Load once.
   useEffect(() => {
@@ -206,7 +237,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               s.tasks,
               stillOpen,
               s.ignoredGoogleTasks,
-              () => Crypto.randomUUID(),
+              (rid) => `gt:${rid}`,
               new Date().toISOString(),
             ).map((t) => (t.external && !t.schedule ? { ...t, schedule: 'personal' as const } : t)),
           }));
@@ -276,6 +307,93 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // ---------- cloud sync (phone <-> web) ----------
+
+  const [cloudStatus, setCloudStatus] = useState<CloudStatus>({ configured: cloudConfigured });
+  const cloudBusy = useRef(false);
+
+  useEffect(() => {
+    if (!cloudConfigured) return;
+    currentEmail()
+      .then((email) => setCloudStatus((c) => ({ ...c, email })))
+      .catch(() => {});
+  }, []);
+
+  const syncCloud = useCallback(async () => {
+    if (!cloudConfigured || cloudBusy.current || !loadedRef.current) return;
+    if (!(await currentEmail())) return;
+    cloudBusy.current = true;
+    setCloudStatus((c) => ({ ...c, syncing: true, error: undefined }));
+    try {
+      const rows = await pullRows(stateRef.current.cloud.lastPull);
+      if (rows.length) {
+        setState((s) => applyRows(s, rows));
+        stateRef.current = applyRows(stateRef.current, rows);
+      }
+      const pending = diffForPush(stateRef.current);
+      const all = [...pending.upserts, ...pending.deletes];
+      if (all.length) {
+        await pushRows(all);
+        setState((s) => markPushed(s, pending));
+      }
+      setCloudStatus((c) => ({ ...c, syncing: false, lastSync: new Date().toISOString() }));
+    } catch (e) {
+      setCloudStatus((c) => ({ ...c, syncing: false, error: (e as Error).message }));
+    } finally {
+      cloudBusy.current = false;
+    }
+  }, []);
+
+  const cloudSendCode = useCallback(async (email: string) => {
+    await sendCode(email);
+  }, []);
+
+  const cloudVerify = useCallback(
+    async (email: string, code: string) => {
+      const who = await verifyCode(email, code);
+      // A new account: start from a clean slate of sync bookkeeping.
+      setState((s) => ({ ...s, cloud: { hashes: {} } }));
+      setCloudStatus((c) => ({ ...c, email: who }));
+      setTimeout(() => syncCloud(), 50);
+    },
+    [syncCloud],
+  );
+
+  const cloudLogout = useCallback(async () => {
+    await cloudSignOut();
+    setState((s) => ({ ...s, cloud: { hashes: {} }, remoteCalendars: {} }));
+    setCloudStatus((c) => ({ ...c, email: null, lastSync: undefined }));
+  }, []);
+
+  // Sync on start, every minute, when returning to the app, and shortly after edits.
+  useEffect(() => {
+    if (!loaded || !cloudStatus.email) return;
+    syncCloud();
+    const id = setInterval(syncCloud, 60_000);
+    const sub = AppState.addEventListener('change', (st) => st === 'active' && syncCloud());
+    return () => {
+      clearInterval(id);
+      sub.remove();
+    };
+  }, [loaded, cloudStatus.email, syncCloud]);
+
+  useEffect(() => {
+    if (!loaded || !cloudStatus.email) return;
+    const id = setTimeout(syncCloud, 3_000);
+    return () => clearTimeout(id);
+  }, [
+    loaded,
+    cloudStatus.email,
+    syncCloud,
+    state.tasks,
+    state.projects,
+    state.rules,
+    state.localEvents,
+    state.settings,
+    state.ignoredGoogleTasks,
+    state.synced,
+  ]);
+
   // ---------- derived plan ----------
 
   const allEvents = useMemo(
@@ -311,7 +429,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, rules: s.rules.map((r) => (r.id === ruleId ? f(r) : r)) }));
 
   const saveTask: Store['saveTask'] = useCallback((t) => {
-    const id = t.id ?? Crypto.randomUUID();
+    const id = t.id ?? uuid();
     setState((s) => {
       const existing = s.tasks.find((x) => x.id === id);
       const projectTasks = t.projectId ? s.tasks.filter((x) => x.projectId === t.projectId) : [];
@@ -418,7 +536,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // ---------- projects ----------
 
   const saveProject: Store['saveProject'] = useCallback((p) => {
-    const id = p.id ?? Crypto.randomUUID();
+    const id = p.id ?? uuid();
     setState((s) => {
       const existing = s.projects.find((x) => x.id === id);
       const project: Project = {
@@ -467,7 +585,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const saveRule: Store['saveRule'] = useCallback((r) => {
     setState((s) => {
-      const id = r.id ?? Crypto.randomUUID();
+      const id = r.id ?? uuid();
       const existing = s.rules.find((x) => x.id === id);
       const rule: RecurringRule = {
         priority: 3,
@@ -492,7 +610,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const saveEvent: Store['saveEvent'] = useCallback((e) => {
     setState((s) => {
       const ev: CalendarEvent = {
-        id: e.id ?? `local:${Crypto.randomUUID()}`,
+        id: e.id ?? `local:${uuid()}`,
         title: e.title,
         start: e.start,
         end: e.end,
@@ -593,6 +711,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     connect,
     disconnect,
     syncAll,
+    cloudStatus,
+    cloudSendCode,
+    cloudVerify,
+    cloudLogout,
+    syncCloud,
   };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
